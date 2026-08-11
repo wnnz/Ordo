@@ -46,7 +46,7 @@ SUPPORTED_NODE_TYPES = {
     "start", "end", "note", "llm", "image", "agent", "classifier", "code",
     "script", "template", "variable", "json", "aggregate", "extract", "list",
     "http", "condition", "human", "wait", "iteration", "loop", "delay",
-    "subworkflow", "document", "answer_filler",
+    "subworkflow", "document", "answer_filler", "host_info",
 }
 
 
@@ -296,7 +296,7 @@ def validate_start_config(config: dict[str, Any]) -> None:
     if not isinstance(triggers, list) or len(triggers) != 1 or not set(triggers) <= allowed_triggers:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid start triggers")
     fields = config.get("input_fields", [])
-    allowed_types = {"text", "textarea", "number", "select", "file", "files"}
+    allowed_types = {"text", "textarea", "number", "month", "select", "file", "files"}
     names: list[str] = []
     for field in fields:
         name = str(field.get("name", ""))
@@ -332,6 +332,15 @@ def validate_start_config(config: dict[str, Any]) -> None:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid number field maximum")
             if minimum is not None and maximum is not None and minimum > maximum:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Number field minimum exceeds maximum")
+        if field.get("type") == "month":
+            default_value = field.get("default_value")
+            if default_value not in (None, "") and not re.fullmatch(
+                r"\d{4}-(?:0[1-9]|1[0-2])", str(default_value)
+            ):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Month field default must use YYYY-MM",
+                )
         names.append(name)
     if len(names) != len(set(names)):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Input field names must be unique")
@@ -1646,6 +1655,7 @@ def execute_script_runtime(runtime: dict[str, Any], inputs: dict[str, Any]) -> d
         str(runtime.get("source", "")),
         str(runtime.get("entrypoint", "main")),
         inputs,
+        network_enabled=bool(runtime.get("network_enabled", False)),
         source_files=runtime.get("source_files") if isinstance(runtime.get("source_files"), dict) else None,
     )
     clean_outputs = {key: value for key, value in outputs.items() if not key.startswith("_")}

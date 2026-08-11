@@ -7,8 +7,103 @@ from app.services.english_exam_script import (
     ENGLISH_EXAM_ANSWER_FILLER_NAME,
     ENGLISH_EXAM_ANSWER_FILLER_OUTPUT_SCHEMA,
 )
+from app.services.system_info_script import SYSTEM_INFO_NAME
 
 ENGLISH_EXAM_TEMPLATE_ID = "english_exam_answer_filler"
+SYSTEM_INFO_WORKFLOW_TEMPLATE_ID = "system_info"
+
+CHAT_SYSTEM_PROMPT = "You are a helpful assistant."
+
+
+def build_chat_graph(*, provider_id: str = "", model: str = "") -> dict[str, Any]:
+    nodes = [
+        {
+            "id": "start",
+            "type": "start",
+            "position": {"x": 60, "y": 180},
+            "data": {
+                "label": "Start",
+                "config": {
+                    "triggers": ["form"],
+                    "input_fields": [
+                        {
+                            "name": "message",
+                            "label": "Message",
+                            "type": "text",
+                            "required": True,
+                            "placeholder": "",
+                            "default_value": "",
+                            "max_length": 2000,
+                        }
+                    ],
+                    "schedule": {
+                        "cron": "0 9 * * *",
+                        "timezone": "UTC",
+                        "enabled": False,
+                        "inputs_json": "{}",
+                    },
+                },
+            },
+        },
+        {
+            "id": "llm",
+            "type": "llm",
+            "position": {"x": 380, "y": 180},
+            "data": {
+                "label": "LLM",
+                "description": "Generate a reply to the user's message",
+                "config": {
+                    "provider_id": provider_id,
+                    "model": model,
+                    "temperature": 0.7,
+                    "top_p": 1,
+                    "max_tokens": 1024,
+                    "messages": [
+                        {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                        {"role": "user", "content": "{{inputs.message}}"},
+                    ],
+                    "prompt": "",
+                    "context": "",
+                    "vision": {"enabled": False, "variable": "", "detail": "high"},
+                    "reasoning": {"separate": False},
+                    "response_format": "text",
+                    "response_schema": {"type": "object", "properties": {}},
+                    "retry": {"enabled": False, "max_retries": 3, "interval_seconds": 0},
+                    "error_strategy": "fail",
+                    "default_output": {},
+                },
+            },
+        },
+        {
+            "id": "end",
+            "type": "end",
+            "position": {"x": 700, "y": 180},
+            "data": {
+                "label": "End",
+                "config": {
+                    "outputs": [{"name": "message", "type": "String", "value": "{{LLM.text}}"}]
+                },
+            },
+        },
+    ]
+    edges = [
+        {"id": "start-llm", "source": "start", "target": "llm"},
+        {"id": "llm-end", "source": "llm", "target": "end"},
+    ]
+    return {"schema_version": 1, "nodes": nodes, "edges": edges}
+
+
+def build_system_info_graph() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "nodes": [
+            {"id": "start", "type": "start", "position": {"x": 60, "y": 180}, "data": {"label": "获取本机信息", "config": {"triggers": ["form"], "input_fields": [], "schedule": {"cron": "0 9 * * *", "timezone": "UTC", "enabled": False, "inputs_json": "{}"}}}},
+            {"id": "collect", "type": "host_info", "position": {"x": 420, "y": 180}, "data": {"label": SYSTEM_INFO_NAME, "description": "通过受保护的 Windows Agent 读取物理机网卡地址", "config": {"timeout_seconds": 10}}},
+            {"id": "end", "type": "end", "position": {"x": 780, "y": 180}, "data": {"label": "返回信息", "config": {"outputs": [{"name": "primary_ipv4", "type": "String", "value": "{{本机信息.primary_ipv4}}"}, {"name": "primary_interface", "type": "String", "value": "{{本机信息.primary_interface}}"}, {"name": "adapters", "type": "Array", "value": "{{本机信息.adapters}}"}, {"name": "source", "type": "String", "value": "{{本机信息.source}}"}]}}},
+        ],
+        "edges": [{"id": "start-collect", "source": "start", "target": "collect"}, {"id": "collect-end", "source": "collect", "target": "end"}],
+    }
+
 
 ENGLISH_EXAM_SYSTEM_PROMPT = """你是一名专业的英语教师和文档结构分析专家。
 

@@ -16,6 +16,7 @@ from app.services.workflow_values import (
     sortable_value,
     stable_item_key,
 )
+from app.services.host_info import execute_host_info_node
 
 NodeExecutor = Callable[[dict[str, Any], dict[str, Any]], Any]
 
@@ -147,6 +148,7 @@ NODE_EXECUTORS: dict[str, NodeExecutor] = {
     "list": execute_list,
     "condition": execute_condition_node,
     "classifier": execute_classifier_node,
+    "host_info": execute_host_info_node,
 }
 
 

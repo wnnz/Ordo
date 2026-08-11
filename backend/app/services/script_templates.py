@@ -2,6 +2,8 @@ from copy import deepcopy
 from typing import Any
 
 from app.services.english_exam_script import english_exam_answer_filler_template
+from app.services.pingcode_worklog_script import pingcode_worklog_template
+from app.services.system_info_script import system_info_template
 
 SCRIPT_TEMPLATES: list[dict[str, Any]] = [
     {
@@ -86,6 +88,8 @@ SCRIPT_TEMPLATES: list[dict[str, Any]] = [
         "sample_inputs": {"text": "A long piece of text for the agent tool.", "max_length": 40},
     },
     english_exam_answer_filler_template(),
+    pingcode_worklog_template(),
+    system_info_template(),
 ]
 
 

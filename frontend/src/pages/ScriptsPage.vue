@@ -18,13 +18,14 @@ import IconButton from '@/volt/IconButton.vue'
 import InputText from '@/volt/InputText.vue'
 import Select from '@/volt/Select.vue'
 import Textarea from '@/volt/Textarea.vue'
+import ToggleSwitch from '@/volt/ToggleSwitch.vue'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { scriptSchemaKind } from '@/utils/scriptSchema'
 
 const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vue'))
 type JsonSchema = Record<string, any>
-type ScriptTemplate = { id: string; name: string; description: string; category: string; source_files: Record<string, string>; entrypoint: string; input_schema: JsonSchema; output_schema: JsonSchema; sample_inputs: Record<string, any> }
-type ScriptVersion = { version: number; entrypoint: string; change_note: string; created_at: string; source_type: string }
+type ScriptTemplate = { id: string; name: string; description: string; category: string; source_files: Record<string, string>; entrypoint: string; input_schema: JsonSchema; output_schema: JsonSchema; sample_inputs: Record<string, any>; network_enabled?: boolean }
+type ScriptVersion = { version: number; entrypoint: string; change_note: string; created_at: string; source_type: string; network_enabled: boolean }
 type EditorTab = 'code' | 'inputs' | 'outputs' | 'test' | 'versions'
 
 const { t } = useI18n()
@@ -52,6 +53,7 @@ const versionOffset = ref(0)
 const versionDiff = ref('')
 const form = ref({
   name: '', description: '', tagsText: '', entrypoint: 'main:main', change_note: '',
+  network_enabled: false,
   source_files: { 'main.py': 'def main(inputs, context):\n    return {"result": inputs}\n' } as Record<string, string>,
   input_schema: { type: 'object', properties: {} } as JsonSchema,
   output_schema: { type: 'object', properties: { result: {} }, required: ['result'] } as JsonSchema,
@@ -80,6 +82,7 @@ function applyTemplate(template: ScriptTemplate, useMetadata = false) {
   form.value.entrypoint = template.entrypoint
   form.value.input_schema = clone(template.input_schema)
   form.value.output_schema = clone(template.output_schema)
+  form.value.network_enabled = Boolean(template.network_enabled)
   activeFile.value = Object.keys(template.source_files)[0] || 'main.py'
   testValues.value = clone(template.sample_inputs)
   if (useMetadata && !selected.value) {
@@ -90,7 +93,7 @@ function applyTemplate(template: ScriptTemplate, useMetadata = false) {
 }
 function resetEditor() {
   const template = templates.value.find(item => item.id === 'blank') || templates.value[0]
-  form.value = { name: '', description: '', tagsText: '', entrypoint: 'main:main', change_note: '', source_files: { 'main.py': '' }, input_schema: { type: 'object', properties: {} }, output_schema: { type: 'object', properties: {} } }
+  form.value = { name: '', description: '', tagsText: '', entrypoint: 'main:main', change_note: '', network_enabled: false, source_files: { 'main.py': '' }, input_schema: { type: 'object', properties: {} }, output_schema: { type: 'object', properties: {} } }
   if (template) applyTemplate(template)
   activeFile.value = Object.keys(form.value.source_files)[0] || 'main.py'
   activeTab.value = 'code'; testResult.value = null; testLogs.value = []; versionDiff.value = ''; testTaskId.value = ''
@@ -107,6 +110,7 @@ async function loadVersion(versionNumber: number) {
   form.value.entrypoint = data.entrypoint
   form.value.input_schema = data.input_schema
   form.value.output_schema = data.output_schema
+  form.value.network_enabled = Boolean(data.network_enabled)
   activeFile.value = Object.keys(form.value.source_files)[0]
 }
 async function edit(item: any) {
@@ -126,6 +130,7 @@ async function save() {
     tags: form.value.tagsText.split(',').map(value => value.trim()).filter(Boolean),
     source_code: entrySource(), source_files: form.value.source_files, entrypoint: form.value.entrypoint,
     input_schema: form.value.input_schema, output_schema: form.value.output_schema,
+    network_enabled: form.value.network_enabled,
     change_note: form.value.change_note || (selected.value ? 'Updated in script editor' : 'Initial version'),
   }
   try {
@@ -202,7 +207,7 @@ function setScalarTestValue(name: string, schema: JsonSchema, value: string) {
 async function test() {
   testing.value = true; error.value = ''; testResult.value = null; testLogs.value = []
   try {
-    const payload = { source_code: entrySource(), source_files: form.value.source_files, entrypoint: form.value.entrypoint, input_schema: form.value.input_schema, output_schema: form.value.output_schema, inputs: testValues.value, timeout_seconds: 30, memory_mb: 256, network_enabled: false }
+    const payload = { source_code: entrySource(), source_files: form.value.source_files, entrypoint: form.value.entrypoint, input_schema: form.value.input_schema, output_schema: form.value.output_schema, inputs: testValues.value, timeout_seconds: 30, memory_mb: 256, network_enabled: form.value.network_enabled }
     const path = selected.value ? `/workspaces/${workspaces.activeId}/scripts/${selected.value.id}/test` : `/workspaces/${workspaces.activeId}/scripts/test`
     const { data } = await api.post(path, payload)
     testTaskId.value = data.task_id
@@ -234,7 +239,7 @@ watch(() => workspaces.activeId, () => Promise.all([load(), loadTemplates()]))
       <div class="min-h-0 flex-1 overflow-y-auto">
         <div v-if="activeTab === 'code'" class="grid min-h-[550px] lg:h-full lg:min-h-0 lg:grid-cols-[190px_minmax(0,1fr)] lg:overflow-hidden">
           <aside class="border-r border-[var(--border)] bg-[var(--panel-subtle)] p-3 lg:min-h-0 lg:overflow-y-auto"><div class="mb-3 flex items-center gap-2"><InputText v-model="newFileName" class="!h-8 font-mono !text-[10px]" placeholder="helpers/text.py" @keydown.enter.prevent="addFile" /><IconButton :label="t('scripts.addFile')" size="sm" @click="addFile"><FilePlus2 :size="14" /></IconButton></div><button v-for="name in files" :key="name" type="button" class="group flex w-full items-center gap-2 rounded-md px-2 py-2 text-left font-mono text-[10px]" :class="activeFile === name ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'hover:bg-[var(--panel)]'" @click="activeFile = name"><FileCode2 :size="13" /><span class="min-w-0 flex-1 truncate">{{ name }}</span><Trash2 v-if="files.length > 1" :size="12" class="opacity-0 group-hover:opacity-100" @click.stop="removeFile(name)" /></button></aside>
-          <section class="min-w-0 p-4 lg:flex lg:min-h-0 lg:flex-col"><div class="mb-3 grid shrink-0 grid-cols-[minmax(0,1fr)_220px] gap-3"><InputText v-model="form.description" :placeholder="t('common.description')" /><InputText v-model="form.entrypoint" class="font-mono" :placeholder="t('scripts.entrypoint')" /></div><div class="h-[480px] lg:h-auto lg:min-h-0 lg:flex-1"><CodeEditor v-model="activeSource" language="python" height="100%" /></div></section>
+          <section class="min-w-0 p-4 lg:flex lg:min-h-0 lg:flex-col"><div class="mb-3 grid shrink-0 gap-3 lg:grid-cols-[minmax(0,1fr)_220px_260px]"><InputText v-model="form.description" :placeholder="t('common.description')" /><InputText v-model="form.entrypoint" class="font-mono" :placeholder="t('scripts.entrypoint')" /><div class="flex min-h-10 items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-3"><span class="min-w-0 flex-1"><span class="block text-xs font-semibold">{{ t('scripts.networkAccess') }}</span><span class="muted mt-0.5 block truncate text-[10px]">{{ t('scripts.networkAccessHint') }}</span></span><ToggleSwitch v-model="form.network_enabled" :label="t('scripts.networkAccess')" /></div></div><div class="h-[480px] lg:h-auto lg:min-h-0 lg:flex-1"><CodeEditor v-model="activeSource" language="python" height="100%" /></div></section>
         </div>
         <section v-else-if="activeTab === 'inputs'" class="p-5"><ScriptSchemaEditor v-model="form.input_schema" /></section>
         <section v-else-if="activeTab === 'outputs'" class="p-5"><ScriptSchemaEditor v-model="form.output_schema" output /></section>

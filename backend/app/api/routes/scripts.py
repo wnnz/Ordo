@@ -128,6 +128,7 @@ async def create_script(
             entrypoint=payload.entrypoint,
             input_schema=payload.input_schema,
             output_schema=payload.output_schema,
+            network_enabled=payload.network_enabled,
             content_hash=digest,
             change_note=payload.change_note,
             created_by=user.id,
@@ -212,7 +213,11 @@ async def build_test_payload(
         "inputs": hydrated_inputs,
         "timeout_seconds": payload.timeout_seconds,
         "memory_mb": payload.memory_mb,
-        "network_enabled": payload.network_enabled,
+        "network_enabled": (
+            payload.network_enabled
+            if payload.network_enabled is not None
+            else bool(version.network_enabled) if version else False
+        ),
     }
 
 
@@ -436,6 +441,7 @@ async def upload_script(
             entrypoint=entrypoint,
             input_schema={"type": "object"},
             output_schema={},
+            network_enabled=False,
             content_hash=digest,
             change_note=f"Uploaded {file.filename}",
             created_by=user.id,
@@ -488,6 +494,7 @@ async def list_versions(
                 ScriptVersion.version,
                 ScriptVersion.source_type,
                 ScriptVersion.entrypoint,
+                ScriptVersion.network_enabled,
                 ScriptVersion.content_hash,
                 ScriptVersion.change_note,
                 ScriptVersion.created_by,
@@ -589,6 +596,7 @@ async def restore_script_version(
             entrypoint=source.entrypoint,
             input_schema=source.input_schema,
             output_schema=source.output_schema,
+            network_enabled=source.network_enabled,
             content_hash=source.content_hash,
             change_note=payload.change_note,
             created_by=user.id,
@@ -633,6 +641,7 @@ async def update_script(
             entrypoint=payload.entrypoint,
             input_schema=payload.input_schema,
             output_schema=payload.output_schema,
+            network_enabled=payload.network_enabled,
             content_hash=digest,
             change_note=payload.change_note,
             created_by=user.id,

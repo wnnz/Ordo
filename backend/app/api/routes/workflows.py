@@ -21,7 +21,7 @@ from app.models.entities import (
     WorkflowVersion,
     WorkspaceMember,
 )
-from app.schemas.common import ApiModel
+from app.schemas.common import ApiModel, MessageOut
 from app.schemas.workflow import (
     ApprovalOut,
     ApprovalResponseIn,
@@ -41,6 +41,12 @@ from app.schemas.workflow import (
 )
 from app.services.builtin_scripts import ensure_english_exam_answer_filler_script
 from app.services.model_providers import load_model_provider_runtimes
+from app.services.pingcode_builtin_script import ensure_pingcode_worklog_script
+from app.services.pingcode_worklog_workflow import (
+    PINGCODE_ENVIRONMENT_VARIABLES,
+    PINGCODE_WORKLOG_WORKFLOW_TEMPLATE_ID,
+    build_pingcode_worklog_graph,
+)
 from app.services.run_control import (
     RETRYABLE_RUN_STATUSES,
     enqueue_persisted_workflow_run,
@@ -69,7 +75,10 @@ from app.services.workflow_files import (
 )
 from app.services.workflow_templates import (
     ENGLISH_EXAM_TEMPLATE_ID,
+    SYSTEM_INFO_WORKFLOW_TEMPLATE_ID,
+    build_chat_graph,
     build_english_exam_graph,
+    build_system_info_graph,
 )
 from app.services.workspaces import audit, require_role, slugify
 
@@ -234,9 +243,8 @@ async def create_workflow(
     graph = deepcopy(DEFAULT_GRAPH)
     description = payload.description
     app_type = payload.app_type
-    if payload.template_id:
-        if payload.template_id != ENGLISH_EXAM_TEMPLATE_ID:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown workflow template")
+    install_pingcode_environment = False
+    if payload.template_id == ENGLISH_EXAM_TEMPLATE_ID:
         provider = await db.scalar(
             select(ModelProvider)
             .where(ModelProvider.workspace_id == workspace_id)
@@ -274,6 +282,46 @@ async def create_workflow(
         validate_graph(graph)
         app_type = "workflow"
         description = description or "上传英语试卷 Word 文件，自动完成非听力题并返回红字答案版。"
+    elif payload.template_id == PINGCODE_WORKLOG_WORKFLOW_TEMPLATE_ID:
+        pingcode_script, script_created = await ensure_pingcode_worklog_script(
+            db,
+            workspace_id=workspace_id,
+            created_by=user.id,
+        )
+        if script_created:
+            db.add(
+                audit(
+                    workspace_id,
+                    user.id,
+                    "script.installed",
+                    "script",
+                    pingcode_script.id,
+                )
+            )
+        graph = build_pingcode_worklog_graph(script_id=pingcode_script.id)
+        validate_graph(graph)
+        app_type = "workflow"
+        install_pingcode_environment = True
+        description = description or (
+            "按起始年月检查 NEWDMS 迭代，仅为当前用户负责的 Task 补齐法定工作日工时。"
+        )
+    elif payload.template_id == SYSTEM_INFO_WORKFLOW_TEMPLATE_ID:
+        graph = build_system_info_graph()
+        validate_graph(graph)
+        app_type = "workflow"
+        description = description or "通过受保护的 Windows Agent 获取物理机主网卡 IP 和接口信息。"
+    elif payload.template_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown workflow template")
+    elif app_type == "chat":
+        provider = await db.scalar(
+            select(ModelProvider)
+            .where(ModelProvider.workspace_id == workspace_id)
+            .order_by(ModelProvider.created_at, ModelProvider.id)
+        )
+        graph = build_chat_graph(
+            provider_id=provider.id if provider else "",
+            model=provider.default_model if provider else "",
+        )
     workflow_slug = payload.slug or slugify(payload.name)
     await ensure_workflow_slug_available(db, workflow_slug)
     workflow = Workflow(
@@ -287,6 +335,19 @@ async def create_workflow(
     )
     db.add(workflow)
     await flush_workflow_slug(db)
+    if install_pingcode_environment:
+        for name, value_type, variable_description in PINGCODE_ENVIRONMENT_VARIABLES:
+            db.add(
+                WorkflowEnvironmentVariable(
+                    workspace_id=workspace_id,
+                    workflow_id=workflow.id,
+                    name=name,
+                    value_type=value_type,
+                    encrypted_value=encrypt_secret(""),
+                    description=variable_description,
+                    created_by=user.id,
+                )
+            )
     db.add(audit(workspace_id, user.id, "workflow.created", "workflow", workflow.id))
     await db.commit()
     await db.refresh(workflow)
@@ -464,6 +525,19 @@ async def update_workflow(
     await db.commit()
     await db.refresh(workflow)
     return workflow
+
+
+@router.delete("/{workflow_id}", response_model=MessageOut)
+async def delete_workflow(
+    workspace_id: str, workflow_id: str, db: DbSession, user: CurrentUser
+) -> MessageOut:
+    await require_role(db, workspace_id, user.id, "editor")
+    workflow = await get_workflow(db, workspace_id, workflow_id)
+    workflow.deleted_at = datetime.now(UTC)
+    workflow.next_run_at = None
+    db.add(audit(workspace_id, user.id, "workflow.deleted", "workflow", workflow.id))
+    await db.commit()
+    return MessageOut(message="Workflow deleted; versions and run history are retained")
 
 
 @router.post("/{workflow_id}/publish", response_model=WorkflowVersionOut)

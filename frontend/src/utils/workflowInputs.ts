@@ -1,6 +1,6 @@
 export type WorkflowInputField = {
   name: string
-  type?: 'text' | 'textarea' | 'number' | 'select' | 'file' | 'files'
+  type?: 'text' | 'textarea' | 'number' | 'month' | 'select' | 'file' | 'files'
   default_value?: unknown
 }
 

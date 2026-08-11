@@ -138,6 +138,7 @@ class ScriptVersion(Base):
     entrypoint: Mapped[str] = mapped_column(String(255), default="main")
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output_schema: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    network_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     environment_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     change_note: Mapped[str] = mapped_column(Text, default="")

@@ -29,6 +29,7 @@ def _runtime(version: ScriptVersion) -> dict[str, Any]:
         "entrypoint": version.entrypoint,
         "input_schema": version.input_schema,
         "output_schema": version.output_schema,
+        "network_enabled": version.network_enabled,
     }
 
 

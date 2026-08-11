@@ -3,7 +3,7 @@ name: ordo
 x-build-proxy: &build-proxy
   HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-http://host.docker.internal:10808}
   HTTPS_PROXY: ${CONTAINER_HTTP_PROXY:-http://host.docker.internal:10808}
-  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,postgres,redis,api,worker,sandbox,sandbox-docker-proxy}
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,shared-postgres,redis,api,worker,sandbox,sandbox-docker-proxy}
 
 x-backend: &backend
   image: ordo-api
@@ -20,28 +20,10 @@ x-backend: &backend
   extra_hosts:
     - "host.docker.internal:host-gateway"
   depends_on:
-    postgres:
-      condition: service_healthy
     redis:
       condition: service_healthy
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ordo
-      POSTGRES_PASSWORD: ordo
-      POSTGRES_DB: ordo
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ordo -d ordo"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -58,10 +40,11 @@ services:
     <<: *backend
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     networks:
       - default
       - sandbox-runtime
+      - shared-postgres
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -74,10 +57,14 @@ services:
     networks:
       - default
       - sandbox-runtime
+      - shared-postgres
 
   beat:
     <<: *backend
     command: celery -A app.worker.celery beat --loglevel=INFO
+    networks:
+      - default
+      - shared-postgres
 
   sandbox:
     image: ordo-sandbox
@@ -134,11 +121,9 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "5173:80"
+      - "${ORDO_BIND_ADDRESS:-127.0.0.1}:${ORDO_PORT:-50008}:80"
 
 volumes:
-  postgres-data:
-    name: ordo_postgres-data
   redis-data:
     name: ordo_redis-data
   file-data:
@@ -153,3 +138,6 @@ networks:
     internal: true
   sandbox-control:
     internal: true
+  shared-postgres:
+    name: shared-postgres
+    external: true

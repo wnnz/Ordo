@@ -16,6 +16,7 @@ class ScriptCreate(BaseModel):
     entrypoint: str = "main"
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    network_enabled: bool = False
     change_note: str = "Initial version"
 
 
@@ -28,6 +29,7 @@ class ScriptUpdate(BaseModel):
     entrypoint: str = "main"
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    network_enabled: bool = False
     change_note: str = "Updated script"
     expected_version: int
 
@@ -55,6 +57,7 @@ class ScriptVersionOut(ApiModel):
     entrypoint: str
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
+    network_enabled: bool
     content_hash: str
     change_note: str
     created_by: str
@@ -67,6 +70,7 @@ class ScriptVersionSummaryOut(ApiModel):
     version: int
     source_type: str
     entrypoint: str
+    network_enabled: bool
     content_hash: str
     change_note: str
     created_by: str
@@ -90,7 +94,7 @@ class ScriptDraftTestIn(BaseModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
     timeout_seconds: int = Field(default=30, ge=1, le=300)
     memory_mb: int = Field(default=256, ge=64, le=2048)
-    network_enabled: bool = False
+    network_enabled: bool | None = None
 
 
 class ScriptTestTaskOut(BaseModel):
@@ -127,6 +131,7 @@ class ScriptTemplateOut(BaseModel):
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
     sample_inputs: dict[str, Any]
+    network_enabled: bool = False
 
 
 class ScriptTestOut(BaseModel):

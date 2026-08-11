@@ -281,6 +281,138 @@ def test_workflow_slug_is_editable_validated_and_globally_unique(client: TestCli
     assert client.get("/v1/apps/english-answer-filler-v2").status_code == 200
 
 
+def test_workflow_delete_requires_editor_and_hides_published_app(client: TestClient):
+    owner = register(client, "delete-owner@example.com", "Delete Owner")
+    viewer = register(client, "delete-viewer@example.com", "Delete Viewer")
+    owner_headers = auth(owner)
+    viewer_headers = auth(viewer)
+    workspace_id = client.get("/api/v1/workspaces", headers=owner_headers).json()[0]["id"]
+
+    invitation = client.post(
+        f"/api/v1/workspaces/{workspace_id}/invitations",
+        headers=owner_headers,
+        json={"email": "delete-viewer@example.com", "role": "viewer", "max_uses": 1},
+    )
+    assert invitation.status_code == 201, invitation.text
+    accepted = client.post(
+        f"/api/v1/workspaces/invitations/{invitation.json()['token']}/accept",
+        headers=viewer_headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    workflow_url = f"/api/v1/workspaces/{workspace_id}/workflows"
+    created = client.post(
+        workflow_url,
+        headers=owner_headers,
+        json={"name": "Disposable workflow", "slug": "disposable-workflow"},
+    )
+    assert created.status_code == 201, created.text
+    workflow = created.json()
+    published = client.post(
+        f"{workflow_url}/{workflow['id']}/publish",
+        headers=owner_headers,
+        json={"change_note": "Before deletion"},
+    )
+    assert published.status_code == 200, published.text
+    assert client.get("/v1/apps/disposable-workflow").status_code == 200
+
+    forbidden = client.delete(f"{workflow_url}/{workflow['id']}", headers=viewer_headers)
+    assert forbidden.status_code == 403
+    assert client.get(f"{workflow_url}/{workflow['id']}", headers=owner_headers).status_code == 200
+
+    deleted = client.delete(f"{workflow_url}/{workflow['id']}", headers=owner_headers)
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["message"] == "Workflow deleted; versions and run history are retained"
+    assert all(item["id"] != workflow["id"] for item in client.get(workflow_url, headers=owner_headers).json())
+    assert client.get(f"{workflow_url}/{workflow['id']}", headers=owner_headers).status_code == 404
+    assert client.get("/v1/apps/disposable-workflow").status_code == 404
+    assert client.delete(f"{workflow_url}/{workflow['id']}", headers=owner_headers).status_code == 404
+
+
+def test_chat_workflow_uses_llm_template_and_binds_default_model(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    session = register(client, "chat-template-owner@example.com", "Chat Template Owner")
+    headers = auth(session)
+    workspace_id = client.get("/api/v1/workspaces", headers=headers).json()[0]["id"]
+    workflows_url = f"/api/v1/workspaces/{workspace_id}/workflows"
+
+    unconfigured = client.post(
+        workflows_url,
+        headers=headers,
+        json={"name": "Chat template without model", "app_type": "chat"},
+    )
+    assert unconfigured.status_code == 201, unconfigured.text
+    unconfigured_graph = unconfigured.json()["draft_graph"]
+    assert [node["type"] for node in unconfigured_graph["nodes"]] == ["start", "llm", "end"]
+    assert unconfigured_graph["edges"] == [
+        {"id": "start-llm", "source": "start", "target": "llm"},
+        {"id": "llm-end", "source": "llm", "target": "end"},
+    ]
+    start = unconfigured_graph["nodes"][0]
+    llm = unconfigured_graph["nodes"][1]
+    end = unconfigured_graph["nodes"][2]
+    assert start["data"]["config"]["input_fields"][0]["required"] is True
+    assert llm["data"]["config"]["provider_id"] == ""
+    assert llm["data"]["config"]["model"] == ""
+    assert llm["data"]["config"]["messages"][-1]["content"] == "{{inputs.message}}"
+    assert end["data"]["config"]["outputs"] == [
+        {"name": "message", "type": "String", "value": "{{LLM.text}}"}
+    ]
+    workflow_engine.validate_draft_graph(unconfigured_graph)
+
+    provider = client.post(
+        f"/api/v1/workspaces/{workspace_id}/models",
+        headers=headers,
+        json={
+            "name": "Chat provider",
+            "base_url": "https://models.example/v1",
+            "api_key": "test-secret",
+            "default_model": "chat-model",
+        },
+    )
+    assert provider.status_code == 201, provider.text
+
+    configured = client.post(
+        workflows_url,
+        headers=headers,
+        json={"name": "Chat template with model", "app_type": "chat"},
+    )
+    assert configured.status_code == 201, configured.text
+    configured_graph = configured.json()["draft_graph"]
+    configured_llm = configured_graph["nodes"][1]
+    assert configured_llm["data"]["config"]["provider_id"] == provider.json()["id"]
+    assert configured_llm["data"]["config"]["model"] == "chat-model"
+    workflow_engine.validate_graph(configured_graph)
+
+    captured: dict[str, str] = {}
+
+    def fake_execute_llm(runtime: dict, config: dict) -> dict:
+        captured["message"] = config["messages"][-1]["content"]
+        return {"text": "Template reply"}
+
+    monkeypatch.setattr(workflow_engine, "execute_llm", fake_execute_llm)
+    output, trace = execute_graph(
+        configured_graph,
+        {"message": "Hello template"},
+        model_providers={provider.json()["id"]: {"name": "Chat provider"}},
+    )
+    assert captured["message"] == "Hello template"
+    assert output == {"message": "Template reply"}
+    assert [item["node_id"] for item in trace] == ["start", "llm", "end"]
+
+    regular = client.post(
+        workflows_url,
+        headers=headers,
+        json={"name": "Regular workflow after chat template", "app_type": "workflow"},
+    )
+    assert regular.status_code == 201, regular.text
+    assert [node["type"] for node in regular.json()["draft_graph"]["nodes"]] == [
+        "start",
+        "end",
+    ]
+
+
 def test_versioned_script_and_workflow_publish(client: TestClient):
     session = client.post(
         "/api/v1/auth/login",
@@ -299,9 +431,16 @@ def test_versioned_script_and_workflow_publish(client: TestClient):
                 "required": ["name"],
             },
             "output_schema": {"type": "object"},
+            "network_enabled": True,
         },
     )
     assert script.status_code == 201, script.text
+    script_version = client.get(
+        f"/api/v1/workspaces/{workspace_id}/scripts/{script.json()['id']}/versions/1",
+        headers=auth(session),
+    )
+    assert script_version.status_code == 200, script_version.text
+    assert script_version.json()["network_enabled"] is True
     workflow = client.post(
         f"/api/v1/workspaces/{workspace_id}/workflows",
         headers=auth(session),
@@ -337,6 +476,85 @@ def test_versioned_script_and_workflow_publish(client: TestClient):
     assert published.status_code == 200, published.text
     reference = published.json()["resolved_references"]["script-1"]
     assert reference["version"] == 1
+
+
+def test_pingcode_worklog_workflow_template_installs_dedicated_network_script(
+    client: TestClient,
+):
+    session = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@example.com", "password": "correct-horse-battery"},
+    ).json()
+    headers = auth(session)
+    workspace_id = client.get("/api/v1/workspaces", headers=headers).json()[0]["id"]
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/workflows",
+        headers=headers,
+        json={
+            "name": "PingCode worklog workflow",
+            "template_id": "pingcode_worklog",
+        },
+    )
+    assert response.status_code == 201, response.text
+    workflow = response.json()
+    graph = workflow["draft_graph"]
+    assert [node["type"] for node in graph["nodes"]] == ["start", "script", "end"]
+    start = graph["nodes"][0]
+    assert start["data"]["config"]["input_fields"][0]["type"] == "month"
+    script_node = graph["nodes"][1]
+    assert script_node["data"]["config"]["inputs"]["project_identifier"] == "NEWDMS"
+
+    scripts = client.get(
+        f"/api/v1/workspaces/{workspace_id}/scripts",
+        headers=headers,
+    ).json()
+    script = next(item for item in scripts if item["slug"] == "pingcode-worklog-filler")
+    version = client.get(
+        f"/api/v1/workspaces/{workspace_id}/scripts/{script['id']}/versions/1",
+        headers=headers,
+    )
+    assert version.status_code == 200, version.text
+    assert version.json()["network_enabled"] is True
+
+    variables = client.get(
+        f"/api/v1/workspaces/{workspace_id}/workflows/{workflow['id']}/environment-variables",
+        headers=headers,
+    )
+    assert variables.status_code == 200, variables.text
+    variable_values = {item["name"]: item for item in variables.json()}
+    assert {
+        "PINGCODE_ACCESS_TOKEN",
+        "PINGCODE_CLIENT_ID",
+        "PINGCODE_CLIENT_SECRET",
+        "PINGCODE_ASSIGNEE_ID",
+        "PINGCODE_ASSIGNEE_EMAIL",
+        "PINGCODE_WORKLOAD_TYPE_ID",
+    } == set(variable_values)
+    assert all(item["value"] == "" for item in variable_values.values())
+    assert all(item["has_value"] is False for item in variable_values.values())
+
+
+def test_system_info_workflow_template_uses_windows_host_agent(client: TestClient):
+    session = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@example.com", "password": "correct-horse-battery"},
+    ).json()
+    headers = auth(session)
+    workspace_id = client.get("/api/v1/workspaces", headers=headers).json()[0]["id"]
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/workflows",
+        headers=headers,
+        json={"name": "System information", "template_id": "system_info"},
+    )
+    assert response.status_code == 201, response.text
+    graph = response.json()["draft_graph"]
+    assert [node["type"] for node in graph["nodes"]] == ["start", "host_info", "end"]
+    assert graph["nodes"][1]["data"]["config"]["timeout_seconds"] == 10
+    outputs = graph["nodes"][2]["data"]["config"]["outputs"]
+    assert [output["name"] for output in outputs] == [
+        "primary_ipv4", "primary_interface", "adapters", "source"
+    ]
 
 
 def test_multi_file_script_upload_versions_diff_and_restore(client: TestClient):
@@ -390,10 +608,16 @@ def test_multi_file_script_upload_versions_diff_and_restore(client: TestClient):
             "entrypoint": "main:main",
             "input_schema": {"type": "object"},
             "output_schema": {"type": "object"},
+            "network_enabled": True,
             "expected_version": 1,
         },
     )
     assert updated.status_code == 200, updated.text
+    updated_detail = client.get(
+        f"/api/v1/workspaces/{workspace_id}/scripts/{script['id']}/versions/2",
+        headers=auth(session),
+    ).json()
+    assert updated_detail["network_enabled"] is True
     diff = client.get(
         f"/api/v1/workspaces/{workspace_id}/scripts/{script['id']}/diff",
         params={"from_version": 1, "to_version": 2},
@@ -413,6 +637,52 @@ def test_multi_file_script_upload_versions_diff_and_restore(client: TestClient):
         headers=auth(session),
     ).json()
     assert "return value * 2" in restored_detail["source_files"]["helpers/maths.py"]
+    assert restored_detail["network_enabled"] is False
+
+
+def test_script_runtime_forwards_versioned_network_permission(monkeypatch):
+    captured: dict = {}
+
+    def fake_execute_sandbox(source, entrypoint, inputs, **kwargs):
+        captured.update(kwargs)
+        return {"result": "ok", "_logs": [], "_elapsed_ms": 1}
+
+    monkeypatch.setattr(workflow_engine, "execute_sandbox", fake_execute_sandbox)
+    result = workflow_engine.execute_script_runtime(
+        {
+            "source": "def main(inputs, context): return {'result': 'ok'}",
+            "source_files": {"main.py": "def main(inputs, context): return {'result': 'ok'}"},
+            "entrypoint": "main:main",
+            "input_schema": {"type": "object"},
+            "output_schema": {"type": "object"},
+            "network_enabled": True,
+        },
+        {},
+    )
+
+    assert result["result"] == "ok"
+    assert captured["network_enabled"] is True
+
+
+def test_month_start_input_accepts_year_month_and_rejects_invalid_default():
+    config = {
+        "triggers": ["form"],
+        "input_fields": [
+            {
+                "name": "start_month",
+                "label": "Start month",
+                "type": "month",
+                "required": True,
+                "default_value": "2026-08",
+            }
+        ],
+    }
+    workflow_engine.validate_start_config(config)
+
+    invalid = deepcopy(config)
+    invalid["input_fields"][0]["default_value"] = "2026-13"
+    with pytest.raises(HTTPException, match="YYYY-MM"):
+        workflow_engine.validate_start_config(invalid)
 
 
 def test_script_bundle_validation_accepts_cross_file_imports():

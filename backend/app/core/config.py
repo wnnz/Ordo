@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     sandbox_url: str = "http://localhost:8081"
     sandbox_shared_secret: str = ""
     sandbox_artifact_path: str = "./data/sandbox-artifacts"
+    host_info_agent_url: str = "http://host.docker.internal:8765"
+    host_info_agent_token: str = ""
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, ge=1024)
     max_request_body_bytes: int = Field(default=50 * 1024 * 1024, ge=1024)
     public_rate_limit_requests: int = Field(default=30, ge=0, le=100_000)
