@@ -25,7 +25,8 @@ function nodeAction(action: NodeAction) { menuOpen.value = false; window.dispatc
 </template>
 
 <style scoped>
-.note-card { width: 220px; min-height: 126px; border: 1px solid var(--note-border); border-radius: 7px; background: var(--note-bg); padding: 12px; color: var(--note-text); box-shadow: 0 4px 14px rgb(16 24 40 / 8%); transition: box-shadow .15s ease, border-color .15s ease; }
+.note-card { width: 220px; min-height: 126px; border: 1px solid var(--note-border); border-radius: 7px; background: var(--note-bg); padding: 12px; color: var(--note-text); box-shadow: 0 4px 14px rgb(16 24 40 / 8%); transition: border-color .15s ease; }
+.note-card:hover { border-color: var(--primary); }
 .note-card.selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--note-border), transparent 55%), 0 6px 18px rgb(16 24 40 / 10%); }
 .note-menu { width: 20px; height: 20px; border-radius: 5px; color: currentColor; font-size: 13px; line-height: 12px; opacity: .65; }
 .note-menu:hover { background: rgb(255 255 255 / 45%); opacity: 1; }

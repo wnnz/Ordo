@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { Languages, Moon, Sparkles, Sun } from 'lucide-vue-next'
+import api from '@/api/client'
 import Button from '@/volt/Button.vue'; import InputText from '@/volt/InputText.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'; import FormField from '@/components/ui/FormField.vue'
 import { useAuthStore } from '@/stores/auth'; import { usePreferencesStore } from '@/stores/preferences'
@@ -10,7 +11,11 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { safeLocalRedirect } from '@/utils/navigation'
 
 const { t } = useI18n(); const route = useRoute(); const router = useRouter(); const auth = useAuthStore(); const preferences = usePreferencesStore(); const workspaces = useWorkspacesStore()
-const registerMode = ref(false); const email = ref(''); const password = ref(''); const name = ref(''); const error = ref(''); const loading = ref(false)
+const registerMode = ref(false); const registrationEnabled = ref(true); const email = ref(''); const password = ref(''); const name = ref(''); const error = ref(''); const loading = ref(false)
+async function loadRegistrationStatus() {
+  try { registrationEnabled.value = (await api.get<{ enabled: boolean }>('/auth/registration-status')).data.enabled }
+  catch { registrationEnabled.value = true }
+}
 async function submit() {
   loading.value = true; error.value = ''
   try {
@@ -22,6 +27,7 @@ async function submit() {
   catch (cause: any) { error.value = cause.response?.data?.detail || String(cause) }
   finally { loading.value = false }
 }
+onMounted(loadRegistrationStatus)
 </script>
 
 <template>
@@ -35,7 +41,7 @@ async function submit() {
       <div class="mt-7 space-y-4"><FormField v-if="registerMode" :label="t('auth.name')" required><InputText v-model="name" required /></FormField><FormField :label="t('auth.email')" required><InputText v-model="email" type="email" required /></FormField><FormField :label="t('auth.password')" required><InputText v-model="password" type="password" required /></FormField></div>
       <AlertBanner :message="error" tone="error" />
       <Button class="mt-6 !w-full" type="submit" :loading="loading" :label="registerMode ? t('auth.register') : t('auth.login')" />
-      <Button type="button" variant="link" block class="mt-4" @click="registerMode = !registerMode">{{ registerMode ? t('auth.switchLogin') : t('auth.switchRegister') }}</Button>
+      <Button v-if="registrationEnabled" type="button" variant="link" block class="mt-4" @click="registerMode = !registerMode">{{ registerMode ? t('auth.switchLogin') : t('auth.switchRegister') }}</Button>
     </form>
   </div>
 </template>

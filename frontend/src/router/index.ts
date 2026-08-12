@@ -9,6 +9,7 @@ const NewWorkspacePage = () => import('@/pages/NewWorkspacePage.vue')
 const PublicAppPage = () => import('@/pages/PublicAppPage.vue')
 const ScriptsPage = () => import('@/pages/ScriptsPage.vue')
 const SettingsPage = () => import('@/pages/SettingsPage.vue')
+const SystemSettingsPage = () => import('@/pages/SystemSettingsPage.vue')
 const StudioPage = () => import('@/pages/StudioPage.vue')
 const WorkflowDesignerPage = () => import('@/pages/WorkflowDesignerPage.vue')
 
@@ -17,6 +18,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/apps/:slug', component: PublicAppPage, meta: { public: true } },
   { path: '/workspaces/new', component: NewWorkspacePage },
   { path: '/admin/users', component: AdminUsersPage, meta: { platformAdmin: true } },
+  { path: '/admin/settings', component: SystemSettingsPage, meta: { platformAdmin: true } },
   { path: '/w/:workspaceId/studio', component: StudioPage },
   { path: '/w/:workspaceId/scripts', component: ScriptsPage },
   { path: '/w/:workspaceId/workflows/:workflowId', component: WorkflowDesignerPage },

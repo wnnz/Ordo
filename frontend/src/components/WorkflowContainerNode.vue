@@ -83,8 +83,9 @@ function removeContainer() {
 </template>
 
 <style scoped>
-.workflow-container { position: relative; width: 100%; height: 100%; min-width: 500px; min-height: 250px; overflow: visible; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--panel), transparent 8%); color: var(--text); box-shadow: 0 3px 14px rgb(16 24 40 / 5%); transition: border-color .15s ease, box-shadow .15s ease; }
-.workflow-container:hover, .workflow-container.selected { border-color: var(--container-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--container-color), transparent 82%), 0 5px 18px rgb(16 24 40 / 7%); }
+.workflow-container { position: relative; width: 100%; height: 100%; min-width: 500px; min-height: 250px; overflow: visible; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--panel), transparent 8%); color: var(--text); box-shadow: 0 3px 14px rgb(16 24 40 / 5%); transition: border-color .15s ease; }
+.workflow-container:hover { border-color: var(--primary); }
+.workflow-container.selected { border-color: var(--container-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--container-color), transparent 82%), 0 5px 18px rgb(16 24 40 / 7%); }
 .container-header { display: flex; height: 52px; align-items: center; gap: 9px; border-bottom: 1px solid var(--border); padding: 0 12px; background: color-mix(in srgb, var(--container-color), transparent 94%); }
 .container-icon { display: flex; width: 27px; height: 27px; align-items: center; justify-content: center; border-radius: 6px; background: color-mix(in srgb, var(--container-color), transparent 86%); color: var(--container-color); }
 .container-body { position: absolute; inset: 52px 0 0; background-image: radial-gradient(circle, var(--border) 1px, transparent 1px); background-size: 18px 18px; }

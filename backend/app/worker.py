@@ -35,6 +35,7 @@ from app.services.script_test_events import (
     script_test_cancelled,
 )
 from app.services.scripts import validate_inputs
+from app.services.system_settings import runtime_values
 from app.services.task_queue import enqueue_workflow_run
 from app.services.workflow_engine import WorkflowCancelled, WorkflowPause, execute_graph
 from app.services.workflow_environment import build_system_variables, load_workflow_environment
@@ -323,7 +324,14 @@ async def _execute_run(run_id: str, approval_id: str | None = None) -> str:
 
 
 async def _heartbeat_run(run_id: str, lease_token: str) -> None:
-    interval = max(5, get_settings().workflow_run_lease_seconds // 3)
+    settings = get_settings()
+    interval = max(
+        5,
+        (await runtime_values()).get(
+            "workflow_run_lease_seconds", settings.workflow_run_lease_seconds
+        )
+        // 3,
+    )
     while True:
         await asyncio.sleep(interval)
         if not await extend_workflow_run_lease(run_id, lease_token):

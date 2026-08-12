@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.models.entities import StoredFile
 from app.services.document_processing import GeneratedFile
 from app.services.storage import object_path, put, remove, storage_root
+from app.services.system_settings import runtime_values
 from app.services.uploads import store_upload
 
 INTERNAL_FILE_KEY = "__ordo_object_key"
@@ -33,12 +34,17 @@ def _file_ids(value: Any) -> set[str]:
     return ids
 
 
-def file_expiry(purpose: str, now: datetime | None = None) -> datetime:
+async def file_expiry(purpose: str, now: datetime | None = None) -> datetime:
     current = now or datetime.now(UTC)
     settings = get_settings()
+    values = await runtime_values()
     if purpose.endswith("output"):
-        return current + timedelta(days=settings.file_output_retention_days)
-    return current + timedelta(hours=settings.file_upload_retention_hours)
+        return current + timedelta(
+            days=values.get("file_output_retention_days", settings.file_output_retention_days)
+        )
+    return current + timedelta(
+        hours=values.get("file_upload_retention_hours", settings.file_upload_retention_hours)
+    )
 
 
 def stored_file_available(stored: StoredFile, now: datetime | None = None) -> bool:
@@ -59,7 +65,7 @@ async def create_uploaded_file(
     purpose: str,
 ) -> StoredFile:
     key, digest, size = await store_upload(
-        workspace_id, file, get_settings().max_upload_bytes
+        workspace_id, file, (await runtime_values()).get("max_upload_bytes", get_settings().max_upload_bytes)
     )
     stored = StoredFile(
         workspace_id=workspace_id,
@@ -69,7 +75,7 @@ async def create_uploaded_file(
         size=size,
         sha256=digest,
         purpose=purpose,
-        expires_at=file_expiry(purpose),
+        expires_at=await file_expiry(purpose),
         created_by=created_by,
     )
     db.add(stored)
@@ -92,7 +98,7 @@ async def extend_file_retention(
     ids = _file_ids(value)
     if not ids:
         return
-    expires_at = file_expiry("workflow_output")
+    expires_at = await file_expiry("workflow_output")
     files = list(
         (
             await db.scalars(
@@ -190,7 +196,7 @@ async def materialize_generated_files(
                     size=len(item.content),
                     sha256=stored_digest,
                     purpose=purpose,
-                    expires_at=file_expiry(purpose),
+                    expires_at=await file_expiry(purpose),
                     created_by=created_by,
                 )
                 db.add(stored)
@@ -233,6 +239,8 @@ def contains_file_id(value: Any, file_id: str) -> bool:
 
 async def cleanup_file_lifecycle(db: AsyncSession) -> dict[str, int]:
     settings = get_settings()
+    values = await runtime_values()
+    cleanup_batch_size = values.get("file_cleanup_batch_size", settings.file_cleanup_batch_size)
     now = datetime.now(UTC)
     expired = list(
         (
@@ -240,7 +248,7 @@ async def cleanup_file_lifecycle(db: AsyncSession) -> dict[str, int]:
                 select(StoredFile)
                 .where(StoredFile.expires_at.is_not(None), StoredFile.expires_at <= now)
                 .order_by(StoredFile.expires_at)
-                .limit(settings.file_cleanup_batch_size)
+                .limit(cleanup_batch_size)
                 .with_for_update(skip_locked=True)
             )
         ).all()
@@ -260,11 +268,13 @@ async def cleanup_file_lifecycle(db: AsyncSession) -> dict[str, int]:
             )
 
     known_keys = set((await db.scalars(select(StoredFile.object_key))).all())
-    orphan_cutoff = now - timedelta(hours=settings.file_orphan_grace_hours)
+    orphan_cutoff = now - timedelta(
+        hours=values.get("file_orphan_grace_hours", settings.file_orphan_grace_hours)
+    )
     root = storage_root()
     orphaned = 0
     for path in root.rglob("*"):
-        if orphaned >= settings.file_cleanup_batch_size:
+        if orphaned >= cleanup_batch_size:
             break
         if not path.is_file():
             continue

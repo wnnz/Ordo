@@ -8,6 +8,7 @@ from app.api.routes import (
     models,
     public,
     scripts,
+    system_settings,
     workflows,
     workspaces,
 )
@@ -37,6 +38,7 @@ app.include_router(workflows.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
 app.include_router(api_keys.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(system_settings.router, prefix="/api/v1")
 app.include_router(public.router, prefix="/v1")
 
 

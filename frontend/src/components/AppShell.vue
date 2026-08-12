@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { Bot, Boxes, ChevronDown, FileCode2, Languages, LogOut, Moon, Settings, ShieldCheck, Sun, Users, Workflow } from 'lucide-vue-next'
+import { Bot, Boxes, ChevronDown, FileCode2, Languages, LogOut, Moon, Settings, ShieldCheck, Sun, Users, Workflow, SlidersHorizontal } from 'lucide-vue-next'
 import Button from '@/volt/Button.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -22,6 +22,7 @@ const nav = computed(() => [
   { label: t('nav.members'), icon: Users, path: `${activeBase.value}/members` },
   { label: t('nav.settings'), icon: Settings, path: `${activeBase.value}/settings` },
   ...(auth.user?.is_platform_admin ? [{ label: t('nav.userAdmin'), icon: ShieldCheck, path: '/admin/users' }] : []),
+  ...(auth.user?.is_platform_admin ? [{ label: t('nav.systemSettings'), icon: SlidersHorizontal, path: '/admin/settings' }] : []),
 ])
 onMounted(async () => {
   const routeWorkspace = String(route.params.workspaceId || '')

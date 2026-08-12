@@ -60,7 +60,7 @@ function preview(thread: WorkflowCommentThread) { return thread.messages.at(-1)?
     <template v-else>
       <div class="border-b border-[var(--border)] p-3"><Button class="w-full" variant="secondary" @click="emit('place')"><MessageSquarePlus :size="15" />{{ placementActive ? $t('designer.cancelCommentPlacement') : $t('designer.addCanvasComment') }}</Button></div>
       <div class="min-h-0 flex-1 overflow-y-auto p-3">
-        <button v-for="(thread, index) in visible" :key="thread.id" type="button" class="mb-2 w-full rounded-lg border border-[var(--border)] p-3 text-left hover:border-[var(--primary)] hover:bg-[var(--panel-subtle)]" @click="emit('select', thread.id)">
+        <button v-for="(thread, index) in visible" :key="thread.id" type="button" class="card-hover mb-2 w-full rounded-lg border border-[var(--border)] p-3 text-left" @click="emit('select', thread.id)">
           <div class="flex items-center gap-2"><span class="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[9px] font-bold text-white">{{ index + 1 }}</span><span class="truncate text-[11px] font-semibold">{{ thread.messages[0]?.author_name }}</span><CheckCircle2 v-if="thread.resolved" :size="13" class="ml-auto text-emerald-600" /></div>
           <p class="mt-2 line-clamp-2 text-xs leading-5">{{ preview(thread) }}</p><span class="muted mt-1.5 block text-[9px]">{{ new Date(thread.updated_at).toLocaleString() }} · {{ thread.messages.length }} {{ $t('designer.commentMessages') }}</span>
         </button>

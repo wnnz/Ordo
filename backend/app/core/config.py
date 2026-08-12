@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     file_output_retention_days: int = Field(default=30, ge=1, le=3650)
     file_orphan_grace_hours: int = Field(default=24, ge=1, le=8760)
     file_cleanup_batch_size: int = Field(default=500, ge=1, le=10_000)
+    disable_user_registration: bool = False
     log_level: str = "INFO"
     otel_exporter_otlp_endpoint: str = ""
     alert_webhook_url: str = ""

@@ -41,6 +41,5 @@ button, input, textarea { font: inherit; }
 .surface { background: var(--panel); border: 1px solid var(--border); }
 .muted { color: var(--muted); }
 .focus-ring:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary), transparent 45%); outline-offset: 2px; }
-.card-hover { transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
-.card-hover:hover { border-color: color-mix(in srgb, var(--primary), var(--border) 65%); box-shadow: 0 8px 26px rgb(16 24 40 / 7%); transform: translateY(-1px); }
-.dark .card-hover:hover { box-shadow: 0 10px 30px rgb(0 0 0 / 25%); }
+.card-hover { transition: border-color .16s ease; }
+.card-hover:hover { border-color: var(--primary) !important; }

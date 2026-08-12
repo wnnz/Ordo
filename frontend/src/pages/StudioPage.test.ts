@@ -99,3 +99,28 @@ describe('StudioPage workflow deletion', () => {
     expect(wrapper.findAll('button').some(button => button.text() === 'studio.newApp')).toBe(false)
   })
 })
+
+describe('StudioPage app type selection', () => {
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset().mockResolvedValue({ data: [] })
+    push.mockReset()
+    workspaces.active.role = 'owner'
+  })
+
+  it('shows the selected app type and updates it when clicked', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('button').trigger('click')
+
+    const workflow = wrapper.get('button[aria-pressed="true"]')
+    expect(workflow.text()).toContain('studio.workflow')
+    expect(workflow.find('svg').exists()).toBe(true)
+    expect(wrapper.get('button[aria-pressed="false"]').text()).toContain('studio.chat')
+
+    await wrapper.get('button[aria-pressed="false"]').trigger('click')
+
+    expect(wrapper.get('button[aria-pressed="true"]').text()).toContain('studio.chat')
+    expect(wrapper.get('button[aria-pressed="false"]').text()).toContain('studio.workflow')
+  })
+})

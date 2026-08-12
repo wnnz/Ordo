@@ -119,8 +119,9 @@ const meta = computed(() => ({
 </template>
 
 <style scoped>
-.workflow-card { position: relative; width: 206px; min-height: 82px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); padding: 10px; color: var(--text); box-shadow: 0 3px 12px rgb(16 24 40 / 6%); transition: border-color .15s ease, box-shadow .15s ease; }
-.workflow-card:hover, .workflow-card.selected { border-color: var(--node-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color), transparent 80%), 0 5px 18px rgb(16 24 40 / 8%); }
+.workflow-card { position: relative; width: 206px; min-height: 82px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); padding: 10px; color: var(--text); box-shadow: 0 3px 12px rgb(16 24 40 / 6%); transition: border-color .15s ease; }
+.workflow-card:hover { border-color: var(--primary); }
+.workflow-card.selected { border-color: var(--node-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color), transparent 80%), 0 5px 18px rgb(16 24 40 / 8%); }
 .node-icon { display: flex; width: 28px; height: 28px; flex: none; align-items: center; justify-content: center; border-radius: 7px; background: color-mix(in srgb, var(--node-color), transparent 88%); color: var(--node-color); }
 .node-menu { width: 20px; height: 20px; border-radius: 5px; color: var(--muted); font-size: 13px; line-height: 12px; }
 .node-menu:hover { background: var(--panel-subtle); }

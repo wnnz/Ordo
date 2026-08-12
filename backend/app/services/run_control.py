@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.entities import WorkflowRun
+from app.services.system_settings import runtime_values
 
 ACTIVE_RUN_STATUSES = {"pending", "running", "cancelling"}
 RETRYABLE_RUN_STATUSES = {"succeeded", "failed", "cancelled"}
@@ -76,7 +77,10 @@ async def find_idempotent_run(
 
 
 async def ensure_public_run_capacity(db: AsyncSession, workflow_id: str) -> None:
-    limit = get_settings().public_max_active_runs_per_app
+    settings = get_settings()
+    limit = (await runtime_values()).get(
+        "public_max_active_runs_per_app", settings.public_max_active_runs_per_app
+    )
     active = await db.scalar(
         select(func.count())
         .select_from(WorkflowRun)
@@ -146,6 +150,10 @@ async def claim_workflow_run(
     db: AsyncSession, run_id: str
 ) -> tuple[WorkflowRun, str] | None:
     now = datetime.now(UTC)
+    settings = get_settings()
+    lease_seconds = (await runtime_values()).get(
+        "workflow_run_lease_seconds", settings.workflow_run_lease_seconds
+    )
     lease_token = str(uuid4())
     result = await db.execute(
         update(WorkflowRun)
@@ -160,8 +168,7 @@ async def claim_workflow_run(
             started_at=func.coalesce(WorkflowRun.started_at, now),
             attempt_count=WorkflowRun.attempt_count + 1,
             lease_token=lease_token,
-            lease_expires_at=now
-            + timedelta(seconds=get_settings().workflow_run_lease_seconds),
+            lease_expires_at=now + timedelta(seconds=lease_seconds),
         )
     )
     await db.commit()
@@ -200,6 +207,10 @@ async def enqueue_persisted_workflow_run(
 
 
 async def extend_workflow_run_lease(run_id: str, lease_token: str) -> bool:
+    settings = get_settings()
+    lease_seconds = (await runtime_values()).get(
+        "workflow_run_lease_seconds", settings.workflow_run_lease_seconds
+    )
     async with SessionLocal() as db:
         result = await db.execute(
             update(WorkflowRun)
@@ -209,8 +220,7 @@ async def extend_workflow_run_lease(run_id: str, lease_token: str) -> bool:
                 WorkflowRun.status.in_({"running", "cancelling"}),
             )
             .values(
-                lease_expires_at=datetime.now(UTC)
-                + timedelta(seconds=get_settings().workflow_run_lease_seconds)
+                lease_expires_at=datetime.now(UTC) + timedelta(seconds=lease_seconds)
             )
         )
         await db.commit()
@@ -219,8 +229,12 @@ async def extend_workflow_run_lease(run_id: str, lease_token: str) -> bool:
 
 async def recover_stale_workflow_runs() -> tuple[list[str], list[str]]:
     now = datetime.now(UTC)
+    settings = get_settings()
+    recovery_seconds = (await runtime_values()).get(
+        "workflow_pending_recovery_seconds", settings.workflow_pending_recovery_seconds
+    )
     pending_before = now - timedelta(
-        seconds=get_settings().workflow_pending_recovery_seconds
+        seconds=recovery_seconds
     )
     requeue: list[tuple[str, str]] = []
     finished: list[tuple[str, str, str | None]] = []

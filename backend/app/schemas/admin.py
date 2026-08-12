@@ -1,4 +1,6 @@
-from pydantic import BaseModel, model_validator
+from datetime import datetime
+
+from pydantic import BaseModel, StrictBool, StrictInt, model_validator
 
 
 class AdminUserUpdate(BaseModel):
@@ -10,3 +12,19 @@ class AdminUserUpdate(BaseModel):
         if self.is_platform_admin is None and self.is_active is None:
             raise ValueError("At least one user property is required")
         return self
+
+
+class SystemSettingsUpdate(BaseModel):
+    values: dict[str, StrictInt | StrictBool]
+
+
+class SystemSettingOut(BaseModel):
+    key: str
+    value: StrictInt | StrictBool
+    default: StrictInt | StrictBool
+    minimum: int | None = None
+    maximum: int | None = None
+    unit: str
+    type: str
+    source: str
+    updated_at: datetime | None = None

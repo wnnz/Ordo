@@ -205,6 +205,87 @@ def test_multi_workspace_invitation_and_role_boundary(client: TestClient):
     assert any(item["id"] == workspace_id and item["role"] == "editor" for item in member_workspaces)
 
 
+def test_platform_system_settings_are_admin_only_and_persist(client: TestClient):
+    admin = register(client, "system-settings-admin@example.com", "System Settings Admin")
+    member = register(client, "system-settings-member@example.com", "System Settings Member")
+    if not admin["user"]["is_platform_admin"]:
+        bootstrap = client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@example.com", "password": "correct-horse-battery"},
+        )
+        assert bootstrap.status_code == 200, bootstrap.text
+        promoted = client.patch(
+            f"/api/v1/admin/users/{admin['user']['id']}",
+            headers=auth(bootstrap.json()),
+            json={"is_platform_admin": True},
+        )
+        assert promoted.status_code == 200, promoted.text
+
+    assert client.get("/api/v1/admin/settings").status_code == 401
+    assert client.get("/api/v1/admin/settings", headers=auth(member)).status_code == 403
+
+    initial = client.get("/api/v1/admin/settings", headers=auth(admin))
+    assert initial.status_code == 200, initial.text
+    settings = {item["key"]: item for item in initial.json()}
+    assert settings["public_max_active_runs_per_app"]["source"] == "environment"
+
+    updated = client.put(
+        "/api/v1/admin/settings",
+        headers=auth(admin),
+        json={"values": {"public_max_active_runs_per_app": 17}},
+    )
+    assert updated.status_code == 200, updated.text
+    changed = {item["key"]: item for item in updated.json()}["public_max_active_runs_per_app"]
+    assert changed["value"] == 17
+    assert changed["source"] == "database"
+
+    restored = client.put(
+        "/api/v1/admin/settings",
+        headers=auth(admin),
+        json={"values": {"public_max_active_runs_per_app": changed["default"]}},
+    )
+    assert restored.status_code == 200, restored.text
+    reset = {item["key"]: item for item in restored.json()}["public_max_active_runs_per_app"]
+    assert reset["source"] == "environment"
+
+    disabled = client.put(
+        "/api/v1/admin/settings",
+        headers=auth(admin),
+        json={"values": {"disable_user_registration": True}},
+    )
+    assert disabled.status_code == 200, disabled.text
+    registration_setting = {
+        item["key"]: item for item in disabled.json()
+    }["disable_user_registration"]
+    assert registration_setting["value"] is True
+    assert registration_setting["type"] == "boolean"
+    blocked = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "registration-disabled@example.com",
+            "password": "correct-horse-battery",
+            "display_name": "Registration Disabled",
+        },
+    )
+    assert blocked.status_code == 403, blocked.text
+
+    enabled = client.put(
+        "/api/v1/admin/settings",
+        headers=auth(admin),
+        json={"values": {"disable_user_registration": False}},
+    )
+    assert enabled.status_code == 200, enabled.text
+    reopened = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "registration-reopened@example.com",
+            "password": "correct-horse-battery",
+            "display_name": "Registration Reopened",
+        },
+    )
+    assert reopened.status_code == 201, reopened.text
+
+
 def test_workflow_slug_is_editable_validated_and_globally_unique(client: TestClient):
     session = register(client, "slug-owner@example.com", "Slug Owner")
     headers = auth(session)

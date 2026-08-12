@@ -8,6 +8,7 @@ import redis.asyncio as async_redis
 from fastapi import HTTPException, Request, status
 
 from app.core.config import get_settings
+from app.services.system_settings import runtime_values
 
 logger = logging.getLogger(__name__)
 RATE_LIMIT_SCRIPT = """
@@ -19,13 +20,14 @@ return {current, redis.call('TTL', KEYS[1])}
 """
 
 
-def scope_limit(scope: str) -> int:
+def scope_limit(scope: str, values: dict[str, int] | None = None) -> int:
     settings = get_settings()
+    values = values or {}
     if scope == "access":
-        return settings.public_access_rate_limit_requests
+        return values.get("public_access_rate_requests", settings.public_access_rate_limit_requests)
     if scope == "upload":
-        return settings.public_upload_rate_limit_requests
-    return settings.public_rate_limit_requests
+        return values.get("public_upload_rate_limit_requests", settings.public_upload_rate_limit_requests)
+    return values.get("public_rate_limit_requests", settings.public_rate_limit_requests)
 
 
 def client_identity(request: Request) -> str:
@@ -42,7 +44,8 @@ async def enforce_public_rate_limit(
     scope: str,
 ) -> None:
     settings = get_settings()
-    limit = scope_limit(scope)
+    values = await runtime_values()
+    limit = scope_limit(scope, values)
     if limit == 0:
         return
     key = f"public-rate:{scope}:{app_slug}:{client_identity(request)}"
@@ -57,7 +60,7 @@ async def enforce_public_rate_limit(
             RATE_LIMIT_SCRIPT,
             1,
             key,
-            settings.public_rate_limit_window_seconds,
+            values.get("public_rate_limit_window_seconds", settings.public_rate_limit_window_seconds),
         )
     except redis.RedisError as exc:
         logger.warning(
