@@ -410,6 +410,117 @@ def test_workflow_delete_requires_editor_and_hides_published_app(client: TestCli
     assert client.delete(f"{workflow_url}/{workflow['id']}", headers=owner_headers).status_code == 404
 
 
+def test_workflow_folders_enforce_scope_permissions_and_non_empty_deletion(client: TestClient):
+    owner = register(client, "folder-owner@example.com", "Folder Owner")
+    viewer = register(client, "folder-viewer@example.com", "Folder Viewer")
+    owner_headers = auth(owner)
+    viewer_headers = auth(viewer)
+    workspace_id = client.get("/api/v1/workspaces", headers=owner_headers).json()[0]["id"]
+    workflows_url = f"/api/v1/workspaces/{workspace_id}/workflows"
+    folders_url = f"{workflows_url}/folders"
+
+    invitation = client.post(
+        f"/api/v1/workspaces/{workspace_id}/invitations",
+        headers=owner_headers,
+        json={"email": "folder-viewer@example.com", "role": "viewer", "max_uses": 1},
+    )
+    assert invitation.status_code == 201, invitation.text
+    accepted = client.post(
+        f"/api/v1/workspaces/invitations/{invitation.json()['token']}/accept",
+        headers=viewer_headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert client.get(folders_url, headers=viewer_headers).status_code == 200
+    assert client.post(folders_url, headers=viewer_headers, json={"name": "Denied"}).status_code == 403
+
+    created_folder = client.post(
+        folders_url, headers=owner_headers, json={"name": "  Operations  "}
+    )
+    assert created_folder.status_code == 201, created_folder.text
+    folder = created_folder.json()
+    assert folder["name"] == "Operations"
+    assert folder["workflow_count"] == 0
+    duplicate = client.post(folders_url, headers=owner_headers, json={"name": "Operations"})
+    assert duplicate.status_code == 409
+
+    renamed = client.patch(
+        f"{folders_url}/{folder['id']}", headers=owner_headers, json={"name": "Delivery"}
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Delivery"
+
+    workflow_response = client.post(
+        workflows_url,
+        headers=owner_headers,
+        json={"name": "Filed workflow", "slug": "filed-workflow"},
+    )
+    assert workflow_response.status_code == 201, workflow_response.text
+    workflow = workflow_response.json()
+    assert workflow["folder_id"] is None
+    moved = client.patch(
+        f"{workflows_url}/{workflow['id']}/folder",
+        headers=owner_headers,
+        json={"folder_id": folder["id"]},
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["folder_id"] == folder["id"]
+    assert moved.json()["draft_version"] == workflow["draft_version"]
+    assert client.get(folders_url, headers=owner_headers).json()[0]["workflow_count"] == 1
+    non_empty = client.delete(f"{folders_url}/{folder['id']}", headers=owner_headers)
+    assert non_empty.status_code == 409
+
+    second_workspace = client.post(
+        "/api/v1/workspaces",
+        headers=owner_headers,
+        json={"name": "Folder Scope Workspace", "timezone": "Asia/Singapore"},
+    ).json()
+    foreign_folder = client.post(
+        f"/api/v1/workspaces/{second_workspace['id']}/workflows/folders",
+        headers=owner_headers,
+        json={"name": "Foreign"},
+    ).json()
+    foreign_move = client.patch(
+        f"{workflows_url}/{workflow['id']}/folder",
+        headers=owner_headers,
+        json={"folder_id": foreign_folder["id"]},
+    )
+    assert foreign_move.status_code == 404
+
+    moved_to_root = client.patch(
+        f"{workflows_url}/{workflow['id']}/folder",
+        headers=owner_headers,
+        json={"folder_id": None},
+    )
+    assert moved_to_root.status_code == 200, moved_to_root.text
+    assert moved_to_root.json()["folder_id"] is None
+    assert client.delete(f"{folders_url}/{folder['id']}", headers=owner_headers).status_code == 204
+
+    soft_delete_folder = client.post(
+        folders_url, headers=owner_headers, json={"name": "Soft deleted contents"}
+    ).json()
+    soft_deleted_workflow = client.post(
+        workflows_url,
+        headers=owner_headers,
+        json={"name": "Soft deleted filed workflow", "slug": "soft-deleted-filed-workflow"},
+    ).json()
+    client.patch(
+        f"{workflows_url}/{soft_deleted_workflow['id']}/folder",
+        headers=owner_headers,
+        json={"folder_id": soft_delete_folder["id"]},
+    )
+    client.delete(f"{workflows_url}/{soft_deleted_workflow['id']}", headers=owner_headers)
+    folder_after_soft_delete = next(
+        item
+        for item in client.get(folders_url, headers=owner_headers).json()
+        if item["id"] == soft_delete_folder["id"]
+    )
+    assert folder_after_soft_delete["workflow_count"] == 0
+    assert (
+        client.delete(f"{folders_url}/{soft_delete_folder['id']}", headers=owner_headers).status_code
+        == 204
+    )
+
+
 def test_chat_workflow_uses_llm_template_and_binds_default_model(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):

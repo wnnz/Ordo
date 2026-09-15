@@ -17,6 +17,7 @@ from app.models.entities import (
     WorkflowAccessGrant,
     WorkflowApproval,
     WorkflowEnvironmentVariable,
+    WorkflowFolder,
     WorkflowRun,
     WorkflowVersion,
     WorkspaceMember,
@@ -35,6 +36,10 @@ from app.schemas.workflow import (
     WorkflowEnvironmentVariableCreate,
     WorkflowEnvironmentVariableOut,
     WorkflowEnvironmentVariableUpdate,
+    WorkflowFolderCreate,
+    WorkflowFolderMove,
+    WorkflowFolderOut,
+    WorkflowFolderUpdate,
     WorkflowOut,
     WorkflowUpdate,
     WorkflowVersionOut,
@@ -146,6 +151,26 @@ async def get_workflow(db: DbSession, workspace_id: str, workflow_id: str) -> Wo
     return workflow
 
 
+async def get_workflow_folder(
+    db: DbSession, workspace_id: str, folder_id: str
+) -> WorkflowFolder:
+    folder = await db.get(WorkflowFolder, folder_id)
+    if not folder or folder.workspace_id != workspace_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workflow folder not found")
+    return folder
+
+
+def workflow_folder_out(folder: WorkflowFolder, workflow_count: int) -> WorkflowFolderOut:
+    return WorkflowFolderOut(
+        id=folder.id,
+        workspace_id=folder.workspace_id,
+        name=folder.name,
+        workflow_count=workflow_count,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
+
+
 async def ensure_workflow_slug_available(
     db: DbSession, slug: str, *, workflow_id: str | None = None
 ) -> None:
@@ -219,6 +244,165 @@ async def resolve_subworkflow_references(
         config["_resolved_reference"] = reference
         references[str(node["id"])] = reference
     return resolved_graph, references
+
+
+@router.get("/folders", response_model=list[WorkflowFolderOut])
+async def list_workflow_folders(
+    workspace_id: str, db: DbSession, user: CurrentUser
+) -> list[WorkflowFolderOut]:
+    await require_role(db, workspace_id, user.id)
+    folders = list(
+        (
+            await db.scalars(
+                select(WorkflowFolder)
+                .where(WorkflowFolder.workspace_id == workspace_id)
+                .order_by(WorkflowFolder.name, WorkflowFolder.id)
+            )
+        ).all()
+    )
+    counts = dict(
+        (
+            await db.execute(
+                select(Workflow.folder_id, func.count(Workflow.id))
+                .where(
+                    Workflow.workspace_id == workspace_id,
+                    Workflow.folder_id.is_not(None),
+                    Workflow.deleted_at.is_(None),
+                )
+                .group_by(Workflow.folder_id)
+            )
+        ).all()
+    )
+    return [workflow_folder_out(folder, counts.get(folder.id, 0)) for folder in folders]
+
+
+@router.post("/folders", response_model=WorkflowFolderOut, status_code=status.HTTP_201_CREATED)
+async def create_workflow_folder(
+    workspace_id: str,
+    payload: WorkflowFolderCreate,
+    db: DbSession,
+    user: CurrentUser,
+) -> WorkflowFolderOut:
+    await require_role(db, workspace_id, user.id, "editor")
+    duplicate = await db.scalar(
+        select(WorkflowFolder.id).where(
+            WorkflowFolder.workspace_id == workspace_id,
+            WorkflowFolder.name == payload.name,
+        )
+    )
+    if duplicate:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Workflow folder name already exists")
+    folder = WorkflowFolder(workspace_id=workspace_id, name=payload.name, created_by=user.id)
+    db.add(folder)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Workflow folder name already exists"
+        ) from exc
+    db.add(audit(workspace_id, user.id, "workflow_folder.created", "workflow_folder", folder.id))
+    await db.commit()
+    await db.refresh(folder)
+    return workflow_folder_out(folder, 0)
+
+
+@router.patch("/folders/{folder_id}", response_model=WorkflowFolderOut)
+async def update_workflow_folder(
+    workspace_id: str,
+    folder_id: str,
+    payload: WorkflowFolderUpdate,
+    db: DbSession,
+    user: CurrentUser,
+) -> WorkflowFolderOut:
+    await require_role(db, workspace_id, user.id, "editor")
+    folder = await get_workflow_folder(db, workspace_id, folder_id)
+    duplicate = await db.scalar(
+        select(WorkflowFolder.id).where(
+            WorkflowFolder.workspace_id == workspace_id,
+            WorkflowFolder.name == payload.name,
+            WorkflowFolder.id != folder_id,
+        )
+    )
+    if duplicate:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Workflow folder name already exists")
+    previous_name = folder.name
+    folder.name = payload.name
+    db.add(
+        audit(
+            workspace_id,
+            user.id,
+            "workflow_folder.updated",
+            "workflow_folder",
+            folder.id,
+            {"name": {"from": previous_name, "to": folder.name}},
+        )
+    )
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Workflow folder name already exists"
+        ) from exc
+    await db.refresh(folder)
+    workflow_count = await db.scalar(
+        select(func.count(Workflow.id)).where(
+            Workflow.folder_id == folder.id, Workflow.deleted_at.is_(None)
+        )
+    )
+    return workflow_folder_out(folder, workflow_count or 0)
+
+
+@router.delete("/folders/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workflow_folder(
+    workspace_id: str, folder_id: str, db: DbSession, user: CurrentUser
+) -> None:
+    await require_role(db, workspace_id, user.id, "editor")
+    folder = await get_workflow_folder(db, workspace_id, folder_id)
+    workflow_count = await db.scalar(
+        select(func.count(Workflow.id)).where(
+            Workflow.folder_id == folder.id, Workflow.deleted_at.is_(None)
+        )
+    )
+    if workflow_count:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Workflow folder must be empty before deletion"
+        )
+    db.add(
+        audit(workspace_id, user.id, "workflow_folder.deleted", "workflow_folder", folder.id)
+    )
+    await db.delete(folder)
+    await db.commit()
+
+
+@router.patch("/{workflow_id}/folder", response_model=WorkflowOut)
+async def move_workflow_to_folder(
+    workspace_id: str,
+    workflow_id: str,
+    payload: WorkflowFolderMove,
+    db: DbSession,
+    user: CurrentUser,
+) -> Workflow:
+    await require_role(db, workspace_id, user.id, "editor")
+    workflow = await get_workflow(db, workspace_id, workflow_id)
+    if payload.folder_id is not None:
+        await get_workflow_folder(db, workspace_id, payload.folder_id)
+    previous_folder_id = workflow.folder_id
+    workflow.folder_id = payload.folder_id
+    db.add(
+        audit(
+            workspace_id,
+            user.id,
+            "workflow.folder_changed",
+            "workflow",
+            workflow.id,
+            {"folder_id": {"from": previous_folder_id, "to": workflow.folder_id}},
+        )
+    )
+    await db.commit()
+    await db.refresh(workflow)
+    return workflow
 
 
 @router.get("", response_model=list[WorkflowOut])

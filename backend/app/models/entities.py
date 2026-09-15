@@ -156,6 +156,19 @@ class ScriptVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class WorkflowFolder(Base):
+    __tablename__ = "workflow_folders"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class Workflow(Base):
     __tablename__ = "workflows"
     __table_args__ = (
@@ -165,6 +178,9 @@ class Workflow(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
     workspace_id: Mapped[str] = mapped_column(
         ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    folder_id: Mapped[str | None] = mapped_column(
+        ForeignKey("workflow_folders.id", ondelete="SET NULL"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(120))
     slug: Mapped[str] = mapped_column(String(80))

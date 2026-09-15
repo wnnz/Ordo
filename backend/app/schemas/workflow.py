@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import ApiModel
 
@@ -22,6 +22,39 @@ class WorkflowUpdate(BaseModel):
     slug: str | None = Field(default=None, min_length=1, max_length=80, pattern=WORKFLOW_SLUG_PATTERN)
     graph: dict[str, Any]
     expected_version: int
+
+
+class WorkflowFolderName(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Folder name cannot be empty")
+        return value
+
+
+class WorkflowFolderCreate(WorkflowFolderName):
+    pass
+
+
+class WorkflowFolderUpdate(WorkflowFolderName):
+    pass
+
+
+class WorkflowFolderOut(ApiModel):
+    id: str
+    workspace_id: str
+    name: str
+    workflow_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkflowFolderMove(BaseModel):
+    folder_id: str | None = Field(default=None, max_length=36)
 
 
 class WorkflowEnvironmentVariableCreate(BaseModel):
@@ -52,6 +85,7 @@ class WorkflowEnvironmentVariableOut(ApiModel):
 class WorkflowOut(ApiModel):
     id: str
     workspace_id: str
+    folder_id: str | None
     name: str
     slug: str
     description: str
