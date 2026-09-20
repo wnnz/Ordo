@@ -1,18 +1,16 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
+using OrdoWindowsAgent.Models;
+using OrdoWindowsAgent.Native;
 
-namespace OrdoWindowsAgent;
+namespace OrdoWindowsAgent.Services;
 
 /// <summary>
 /// 负责收集 Windows 宿主机网络适配器与主 IP 信息。
 /// </summary>
 public static class HostInfoCollector
 {
-    [DllImport("iphlpapi.dll", ExactSpelling = true)]
-    private static extern int GetBestInterface(uint destAddr, out uint bestIfIndex);
-
     /// <summary>
     /// 采集本机网络适配器并计算主 IPv4 地址。
     /// </summary>
@@ -24,7 +22,7 @@ public static class HostInfoCollector
 
         // 查询系统当前最优路由的目标接口索引（以 8.8.8.8 作为测试外网目标）
         uint bestIfIndex = 0;
-        bool hasBestInterface = GetBestInterface(0x08080808, out bestIfIndex) == 0;
+        bool hasBestInterface = IpHelperNativeMethods.GetBestInterface(0x08080808, out bestIfIndex) == 0;
 
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {

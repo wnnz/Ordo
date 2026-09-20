@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using OrdoWindowsAgent.Models;
+using OrdoWindowsAgent.Services;
 
 namespace OrdoWindowsAgent;
 
