@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Link2, Mail, Monitor, Plus, Trash2 } from 'lucide-vue-next'
 import VariableField from '@/components/VariableField.vue'
+import ChoiceCard from '@/components/ui/ChoiceCard.vue'
 import FormField from '@/components/ui/FormField.vue'
 import InputText from '@/volt/InputText.vue'
 import Select from '@/volt/Select.vue'
@@ -41,7 +42,7 @@ function addAction() {
       <div class="space-y-4">
         <NodeConfigSection :title="$t('designer.submissionMethods')" :hint="$t('designer.submissionMethodsHint')">
           <div class="grid grid-cols-3 gap-2">
-            <button v-for="method in methods" :key="method.id" type="button" class="card-hover flex h-16 flex-col items-center justify-center gap-1.5 rounded-lg border text-[10px] font-medium" :class="config.submission_methods?.includes(method.id) ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]' : 'border-[var(--border)]'" @click="toggleMethod(method.id)"><component :is="method.icon" :size="16" />{{ $t(`designer.submissionMethod.${method.id}`) }}</button>
+            <ChoiceCard v-for="method in methods" :key="method.id" :selected="config.submission_methods?.includes(method.id)" class="flex h-16 flex-col items-center justify-center gap-1.5 text-[10px] font-medium" @click="toggleMethod(method.id)"><component :is="method.icon" :size="16" />{{ $t(`designer.submissionMethod.${method.id}`) }}</ChoiceCard>
           </div>
         </NodeConfigSection>
 

@@ -749,6 +749,32 @@ def test_system_info_workflow_template_uses_windows_host_agent(client: TestClien
     ]
 
 
+def test_rdp_disconnect_workflow_template_uses_windows_agent(client: TestClient):
+    session = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@example.com", "password": "correct-horse-battery"},
+    ).json()
+    headers = auth(session)
+    workspace_id = client.get("/api/v1/workspaces", headers=headers).json()[0]["id"]
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/workflows",
+        headers=headers,
+        json={"name": "Disconnect RDP", "template_id": "rdp_disconnect"},
+    )
+    assert response.status_code == 201, response.text
+    workflow = response.json()
+    graph = workflow["draft_graph"]
+    assert workflow["description"] == (
+        "通过本机 Windows Agent 断开当前活跃的远程桌面连接，不注销用户。"
+    )
+    assert [node["type"] for node in graph["nodes"]] == ["start", "rdp_disconnect", "end"]
+    assert graph["nodes"][1]["data"]["config"] == {"timeout_seconds": 10}
+    outputs = graph["nodes"][2]["data"]["config"]["outputs"]
+    assert [output["name"] for output in outputs] == [
+        "ok", "disconnected_count", "sessions", "message"
+    ]
+
+
 def test_multi_file_script_upload_versions_diff_and_restore(client: TestClient):
     session = client.post(
         "/api/v1/auth/login",

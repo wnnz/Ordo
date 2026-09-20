@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { Braces, Copy, EyeOff, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-vue-next'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
+import ChoiceCard from '@/components/ui/ChoiceCard.vue'
 import ModalShell from '@/components/ui/ModalShell.vue'
 import Button from '@/volt/Button.vue'
 import InputText from '@/volt/InputText.vue'
@@ -55,7 +56,7 @@ defineExpose({ markSaved })
   </div>
 
   <ModalShell v-model="editorOpen" :title="editing ? $t('designer.editEnvironmentVariable') : $t('designer.addEnvironmentVariable')" :description="$t('designer.environmentVariableEditorHint')" form @submit="submit">
-    <div class="grid grid-cols-3 gap-2" role="radiogroup" :aria-label="$t('designer.variableType')"><button v-for="type in ['string','number','secret']" :key="type" type="button" role="radio" :aria-checked="form.value_type === type" class="rounded-lg border px-3 py-2 text-xs" :class="form.value_type === type ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]' : 'border-[var(--border)]'" @click="form.value_type = type as any">{{ $t(`designer.environmentTypes.${type}`) }}</button></div>
+    <div class="grid grid-cols-3 gap-2" role="radiogroup" :aria-label="$t('designer.variableType')"><ChoiceCard v-for="type in ['string','number','secret']" :key="type" role="radio" :aria-checked="form.value_type === type" :selected="form.value_type === type" class="px-3 py-2 text-xs" @click="form.value_type = type as any">{{ $t(`designer.environmentTypes.${type}`) }}</ChoiceCard></div>
     <label class="field-label mt-4">{{ $t('designer.variableName') }}<InputText v-model="form.name" class="mt-1.5 font-mono" placeholder="API_KEY" /></label>
     <label class="field-label mt-4">{{ $t('designer.variableValue') }}<InputText v-model="form.value" class="mt-1.5 font-mono" :type="form.value_type === 'secret' ? 'password' : form.value_type === 'number' ? 'number' : 'text'" :placeholder="editing && form.value_type === 'secret' ? $t('designer.keepSecretValue') : ''" /></label>
     <label class="field-label mt-4">{{ $t('designer.description') }}<Textarea v-model="form.description" class="mt-1.5 h-20 !text-xs" /></label>
@@ -63,4 +64,3 @@ defineExpose({ markSaved })
     <template #footer><Button variant="secondary" @click="closeEditor">{{ $t('common.cancel') }}</Button><Button type="submit" :loading="saving" :disabled="!form.name.trim()">{{ $t('common.save') }}</Button></template>
   </ModalShell>
 </template>
-

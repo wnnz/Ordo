@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { BrainCircuit, Braces, Plus, Trash2, Wrench } from 'lucide-vue-next'
 import VariableField from '@/components/VariableField.vue'
+import ChoiceCard from '@/components/ui/ChoiceCard.vue'
 import FormField from '@/components/ui/FormField.vue'
 import InputText from '@/volt/InputText.vue'
 import Select from '@/volt/Select.vue'
@@ -43,10 +44,10 @@ function toolIcon(_type?: string) { return Braces }
         <NodeConfigSection :title="$t('designer.agentStrategy')">
           <template #icon><BrainCircuit :size="14" /></template>
           <div class="grid grid-cols-2 gap-2">
-            <button v-for="strategy in ['tool_calling','react']" :key="strategy" type="button" class="card-hover rounded-lg border p-3 text-left" :class="config.strategy === strategy ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)]'" @click="config.strategy = strategy">
+            <ChoiceCard v-for="strategy in ['tool_calling','react']" :key="strategy" :selected="config.strategy === strategy" class="p-3 text-left" @click="config.strategy = strategy">
               <span class="block text-xs font-semibold" :class="config.strategy === strategy && 'text-[var(--primary)]'">{{ $t(`designer.agentStrategies.${strategy}`) }}</span>
               <span class="muted mt-1 block text-[9px] leading-4">{{ $t(`designer.agentStrategyHints.${strategy}`) }}</span>
-            </button>
+            </ChoiceCard>
           </div>
         </NodeConfigSection>
 

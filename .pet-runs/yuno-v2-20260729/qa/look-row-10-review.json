@@ -1,8 +1,0 @@
-{
-  "ok": true,
-  "row": "look-row-10",
-  "directions": ["180","202.5","225","247.5","270","292.5","315","337.5"],
-  "semantic_verdict": "pass",
-  "continuity_verdict": "pass",
-  "reason": "The registered atlas sequence moves from down through screen-left to up-left with stable baseline, no wrong-quadrant pose, no clipping, no alpha holes, and no visible reversal."
-}

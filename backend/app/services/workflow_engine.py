@@ -46,7 +46,7 @@ SUPPORTED_NODE_TYPES = {
     "start", "end", "note", "llm", "image", "agent", "classifier", "code",
     "script", "template", "variable", "json", "aggregate", "extract", "list",
     "http", "condition", "human", "wait", "iteration", "loop", "delay",
-    "subworkflow", "document", "answer_filler", "host_info",
+    "subworkflow", "document", "answer_filler", "host_info", "rdp_disconnect",
 }
 
 

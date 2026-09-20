@@ -174,4 +174,13 @@ describe('workflow variable catalog', () => {
       expect.objectContaining({ path: '等待完成.mode', type: 'String' }),
     ]))
   })
+
+  it('exposes RDP disconnect outputs', () => {
+    const node = { id: 'rdp-1', type: 'rdp_disconnect', position: { x: 0, y: 0 }, data: { nodeType: 'rdp_disconnect', label: '断开远程桌面', config: {} } }
+    expect(getNodeOutputVariables(node)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '断开远程桌面.ok', type: 'Boolean' }),
+      expect.objectContaining({ path: '断开远程桌面.disconnected_count', type: 'Number' }),
+      expect.objectContaining({ path: '断开远程桌面.sessions', type: 'Array[Object]' }),
+    ]))
+  })
 })

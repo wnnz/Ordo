@@ -11,6 +11,7 @@ from app.services.system_info_script import SYSTEM_INFO_NAME
 
 ENGLISH_EXAM_TEMPLATE_ID = "english_exam_answer_filler"
 SYSTEM_INFO_WORKFLOW_TEMPLATE_ID = "system_info"
+RDP_DISCONNECT_WORKFLOW_TEMPLATE_ID = "rdp_disconnect"
 
 CHAT_SYSTEM_PROMPT = "You are a helpful assistant."
 
@@ -102,6 +103,78 @@ def build_system_info_graph() -> dict[str, Any]:
             {"id": "end", "type": "end", "position": {"x": 780, "y": 180}, "data": {"label": "返回信息", "config": {"outputs": [{"name": "primary_ipv4", "type": "String", "value": "{{本机信息.primary_ipv4}}"}, {"name": "primary_interface", "type": "String", "value": "{{本机信息.primary_interface}}"}, {"name": "adapters", "type": "Array", "value": "{{本机信息.adapters}}"}, {"name": "source", "type": "String", "value": "{{本机信息.source}}"}]}}},
         ],
         "edges": [{"id": "start-collect", "source": "start", "target": "collect"}, {"id": "collect-end", "source": "collect", "target": "end"}],
+    }
+
+
+def build_rdp_disconnect_graph() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "start",
+                "type": "start",
+                "position": {"x": 60, "y": 180},
+                "data": {
+                    "label": "手动触发",
+                    "config": {
+                        "triggers": ["form"],
+                        "input_fields": [],
+                        "schedule": {
+                            "cron": "0 9 * * *",
+                            "timezone": "Asia/Singapore",
+                            "enabled": False,
+                            "inputs_json": "{}",
+                        },
+                    },
+                },
+            },
+            {
+                "id": "disconnect-rdp",
+                "type": "rdp_disconnect",
+                "position": {"x": 420, "y": 180},
+                "data": {
+                    "label": "断开远程桌面",
+                    "description": "断开当前活跃的 RDP 会话，不注销用户或结束其程序",
+                    "config": {"timeout_seconds": 10},
+                },
+            },
+            {
+                "id": "end",
+                "type": "end",
+                "position": {"x": 780, "y": 180},
+                "data": {
+                    "label": "返回结果",
+                    "config": {
+                        "outputs": [
+                            {
+                                "name": "ok",
+                                "type": "Boolean",
+                                "value": "{{断开远程桌面.ok}}",
+                            },
+                            {
+                                "name": "disconnected_count",
+                                "type": "Number",
+                                "value": "{{断开远程桌面.disconnected_count}}",
+                            },
+                            {
+                                "name": "sessions",
+                                "type": "Array",
+                                "value": "{{断开远程桌面.sessions}}",
+                            },
+                            {
+                                "name": "message",
+                                "type": "String",
+                                "value": "{{断开远程桌面.message}}",
+                            },
+                        ]
+                    },
+                },
+            },
+        ],
+        "edges": [
+            {"id": "start-disconnect", "source": "start", "target": "disconnect-rdp"},
+            {"id": "disconnect-end", "source": "disconnect-rdp", "target": "end"},
+        ],
     }
 
 

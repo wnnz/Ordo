@@ -6,13 +6,13 @@ import api from '@/api/client'
 import { consumeRunEvents } from '@/api/runEvents'
 import AppShell from '@/components/AppShell.vue'
 import ScriptSchemaEditor from '@/components/scripts/ScriptSchemaEditor.vue'
+import ScriptCard from '@/components/scripts/ScriptCard.vue'
 import WorkflowOutputRenderer from '@/components/WorkflowOutputRenderer.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ModalShell from '@/components/ui/ModalShell.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import SearchInput from '@/components/ui/SearchInput.vue'
-import ActionCard from '@/volt/ActionCard.vue'
 import Button from '@/volt/Button.vue'
 import IconButton from '@/volt/IconButton.vue'
 import InputText from '@/volt/InputText.vue'
@@ -230,7 +230,7 @@ watch(() => workspaces.activeId, () => Promise.all([load(), loadTemplates()]))
   <AppShell><div class="px-4 py-5 sm:px-7">
     <PageHeader :title="t('scripts.title')" :subtitle="t('scripts.subtitle')"><template #actions><input ref="fileInput" type="file" class="hidden" accept=".py,.zip" @change="upload"><Button variant="secondary" :loading="saving" @click="fileInput?.click()"><Upload :size="16" />{{ t('scripts.upload') }}</Button><Button @click="newScript"><Plus :size="16" />{{ t('scripts.newScript') }}</Button></template></PageHeader>
     <AlertBanner :message="error" tone="error" /><SearchInput v-model="search" class="mt-5 w-full sm:w-72" :placeholder="t('common.search')" />
-    <div v-if="filtered.length" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3"><ActionCard v-for="item in filtered" :key="item.id" class="rounded-lg p-4" @click="edit(item)"><div class="flex items-start gap-3"><span class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40"><FileCode2 :size="20" /></span><div class="min-w-0"><h2 class="truncate font-semibold">{{ item.name }}</h2><p class="muted mt-1 line-clamp-2 text-sm">{{ item.description || 'Python · main(inputs, context)' }}</p></div></div><div class="muted mt-5 flex justify-between border-t border-[var(--border)] pt-3 text-xs"><span>{{ t('scripts.version') }} {{ item.latest_version }}</span><span>{{ item.tags?.join(', ') }}</span></div></ActionCard></div>
+    <div v-if="filtered.length" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3"><ScriptCard v-for="item in filtered" :key="item.id" :script="item" @select="edit(item)" /></div>
     <EmptyState v-else class="mt-16" :title="t('scripts.empty')"><template #icon><Braces :size="42" /></template></EmptyState>
 
     <ModalShell v-model="showEditor" :title="selected ? t('scripts.edit') : t('scripts.newScript')" max-width="max-w-[1180px]" panel-class="h-[92vh]" body-class="flex min-h-0 flex-col !overflow-hidden p-0" form @submit="save">

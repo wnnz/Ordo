@@ -9,6 +9,7 @@ filters, search fields, or status badges.
 - `FormField` — label, hint, required marker, error, and control slot
 - `AlertBanner` / `EmptyState` / `StatusBadge` — application feedback states
 - `FilterDropdown` / `SearchInput` — list filtering controls
+- `ChoiceCard` / `AvatarInitial` / `PanelSection` — shared choice, identity, and section layouts
 
 Low-level Volt controls live in `src/volt`:
 
@@ -25,3 +26,6 @@ Pages should use these controls rather than restyling native buttons or selects.
 Native elements remain inside the control components and inside specialised
 canvas widgets whose interaction model is not a normal application action.
 Workflow-specific reusable editors live in `src/components/designer`.
+`SystemSettingField` is the reusable administrator setting editor used by the
+system settings page. Keep domain-specific components outside this directory
+when their markup or state is not shared by multiple feature areas.

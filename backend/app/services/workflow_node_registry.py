@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from app.services.host_info import execute_host_info_node
+from app.services.rdp_disconnect import execute_rdp_disconnect_node
 from app.services.workflow_values import (
     coerce_assignment_value,
     empty_assignment_value,
@@ -16,7 +18,6 @@ from app.services.workflow_values import (
     sortable_value,
     stable_item_key,
 )
-from app.services.host_info import execute_host_info_node
 
 NodeExecutor = Callable[[dict[str, Any], dict[str, Any]], Any]
 
@@ -149,6 +150,7 @@ NODE_EXECUTORS: dict[str, NodeExecutor] = {
     "condition": execute_condition_node,
     "classifier": execute_classifier_node,
     "host_info": execute_host_info_node,
+    "rdp_disconnect": execute_rdp_disconnect_node,
 }
 
 

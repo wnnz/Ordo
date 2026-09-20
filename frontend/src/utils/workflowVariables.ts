@@ -45,6 +45,7 @@ export function getNodeOutputVariables(node: WorkflowNodeLike): WorkflowVariable
     delay: [['completed_at', 'String']],
     subworkflow: [['output', 'Object']],
     answer_filler: [['file', 'File'], ['inserted_count', 'Number'], ['requested_count', 'Number'], ['insertions', 'Array[Object]']],
+    rdp_disconnect: [['ok', 'Boolean'], ['disconnected_count', 'Number'], ['sessions', 'Array[Object]'], ['failed', 'Array[Object]'], ['message', 'String'], ['source', 'String']],
   }
 
   const withErrorVariables = (variables: WorkflowVariable[]) => {

@@ -80,9 +80,11 @@ from app.services.workflow_files import (
 )
 from app.services.workflow_templates import (
     ENGLISH_EXAM_TEMPLATE_ID,
+    RDP_DISCONNECT_WORKFLOW_TEMPLATE_ID,
     SYSTEM_INFO_WORKFLOW_TEMPLATE_ID,
     build_chat_graph,
     build_english_exam_graph,
+    build_rdp_disconnect_graph,
     build_system_info_graph,
 )
 from app.services.workspaces import audit, require_role, slugify
@@ -494,6 +496,13 @@ async def create_workflow(
         validate_graph(graph)
         app_type = "workflow"
         description = description or "通过受保护的 Windows Agent 获取物理机主网卡 IP 和接口信息。"
+    elif payload.template_id == RDP_DISCONNECT_WORKFLOW_TEMPLATE_ID:
+        graph = build_rdp_disconnect_graph()
+        validate_graph(graph)
+        app_type = "workflow"
+        description = description or (
+            "通过本机 Windows Agent 断开当前活跃的远程桌面连接，不注销用户。"
+        )
     elif payload.template_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown workflow template")
     elif app_type == "chat":
