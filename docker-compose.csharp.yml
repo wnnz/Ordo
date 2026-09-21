@@ -1,0 +1,108 @@
+name: ordo
+
+x-build-proxy: &build-proxy
+  HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-http://host.docker.internal:10808}
+  HTTPS_PROXY: ${CONTAINER_HTTP_PROXY:-http://host.docker.internal:10808}
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,shared-postgres,api,sandbox,sandbox-docker-proxy}
+
+services:
+  api:
+    image: ordo-api:csharp
+    build:
+      context: ./backend-csharp
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8000
+      STORAGE_PATH: /data/files
+      SANDBOX_ARTIFACT_PATH: /data/sandbox-artifacts
+    volumes:
+      - file-data:/data/files
+      - sandbox-artifacts:/data/sandbox-artifacts
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    networks:
+      - default
+      - sandbox-runtime
+      - shared-postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  sandbox:
+    image: ordo-sandbox
+    build:
+      context: ./sandbox
+      args: *build-proxy
+    restart: unless-stopped
+    environment:
+      SANDBOX_SHARED_SECRET: ${SANDBOX_SHARED_SECRET:?SANDBOX_SHARED_SECRET must be set}
+      SANDBOX_RUNTIME_IMAGE: ordo-sandbox
+      DOCKER_HOST: tcp://sandbox-docker-proxy:2375
+      SANDBOX_STORAGE_PATH: /data/files
+      SANDBOX_ARTIFACT_PATH: /data/sandbox-artifacts
+    volumes:
+      - file-data:/data/files:ro
+      - sandbox-artifacts:/data/sandbox-artifacts
+    networks:
+      - sandbox-runtime
+      - sandbox-control
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+  sandbox-docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      POST: 1
+    volumes:
+      - //var/run/docker.sock:/var/run/docker.sock:ro
+      - sandbox-proxy-config:/usr/local/etc/haproxy
+    networks:
+      - sandbox-control
+    read_only: true
+    tmpfs:
+      - /run:size=1m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      context: ./frontend
+      args: *build-proxy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${ORDO_BIND_ADDRESS:-127.0.0.1}:${ORDO_PORT:-50008}:80"
+
+volumes:
+  file-data:
+    name: ordo_file-data
+  sandbox-artifacts:
+    name: ordo_sandbox-artifacts
+  sandbox-proxy-config:
+    name: ordo_sandbox-proxy-config
+
+networks:
+  sandbox-runtime:
+    internal: true
+  sandbox-control:
+    internal: true
+  shared-postgres:
+    name: shared-postgres
+    external: true
