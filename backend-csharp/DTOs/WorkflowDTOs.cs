@@ -28,11 +28,29 @@ public class WorkflowUpdateRequest
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 
+    /// <summary>
+    /// 工作流公开地址使用的稳定 slug。
+    /// </summary>
+    [JsonPropertyName("slug")]
+    public string? Slug { get; set; }
+
     [JsonPropertyName("folder_id")]
     public string? FolderId { get; set; }
 
+    /// <summary>
+    /// 与 Python 基线和前端兼容的草稿图字段。
+    /// </summary>
+    [JsonPropertyName("graph")]
+    public object? Graph { get; set; }
+
     [JsonPropertyName("draft_graph")]
     public object? DraftGraph { get; set; }
+
+    /// <summary>
+    /// 客户端保存时观察到的草稿版本，用于乐观并发控制。
+    /// </summary>
+    [JsonPropertyName("expected_version")]
+    public int? ExpectedVersion { get; set; }
 
     [JsonPropertyName("published_access")]
     public string? PublishedAccess { get; set; }
@@ -138,6 +156,36 @@ public class RunResponse
 
     [JsonPropertyName("created_at")]
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// 工作流运行历史的分页响应。
+/// </summary>
+public class RunPageResponse
+{
+    /// <summary>
+    /// 当前页运行记录。
+    /// </summary>
+    [JsonPropertyName("items")]
+    public List<RunResponse> Items { get; set; } = new();
+
+    /// <summary>
+    /// 符合条件的运行总数。
+    /// </summary>
+    [JsonPropertyName("total")]
+    public int Total { get; set; }
+
+    /// <summary>
+    /// 当前页最大记录数。
+    /// </summary>
+    [JsonPropertyName("limit")]
+    public int Limit { get; set; }
+
+    /// <summary>
+    /// 当前页起始偏移。
+    /// </summary>
+    [JsonPropertyName("offset")]
+    public int Offset { get; set; }
 }
 
 public class WorkflowFolderCreateRequest

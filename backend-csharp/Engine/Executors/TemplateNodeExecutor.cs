@@ -12,7 +12,7 @@ public class TemplateNodeExecutor : INodeExecutor
 
     public Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        string template = node.Data.TryGetValue("template", out var t) ? t?.ToString() ?? "" : "";
+        string template = node.Config.TryGetValue("template", out var t) ? t?.ToString() ?? "" : "";
         object? rendered = WorkflowValueEvaluator.ResolveVariables(template, context);
 
         return Task.FromResult<object?>(new Dictionary<string, object?>

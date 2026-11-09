@@ -16,17 +16,23 @@ public class WorkflowsController : ControllerBase
 {
     private readonly OrdoDbContext _db;
     private readonly CurrentUserContext _currentUser;
+    private readonly WorkspaceAuthorizationService _authorization;
     private readonly WorkflowQueue _queue;
     private readonly RunEventsService _eventsService;
 
+    /// <summary>
+    /// 初始化工作流控制器。
+    /// </summary>
     public WorkflowsController(
         OrdoDbContext db,
         CurrentUserContext currentUser,
+        WorkspaceAuthorizationService authorization,
         WorkflowQueue queue,
         RunEventsService eventsService)
     {
         _db = db;
         _currentUser = currentUser;
+        _authorization = authorization;
         _queue = queue;
         _eventsService = eventsService;
     }
@@ -35,6 +41,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<List<WorkflowResponse>>> ListWorkflows(string workspaceId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
         var list = await _db.Workflows
             .Where(w => w.WorkspaceId == workspaceId && w.DeletedAt == null)
@@ -49,6 +56,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<WorkflowResponse>> CreateWorkflow(string workspaceId, [FromBody] WorkflowCreateRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         string defaultGraph = "{\"schema_version\":1,\"nodes\":[{\"id\":\"start\",\"type\":\"start\",\"position\":{\"x\":80,\"y\":160},\"data\":{\"label\":\"Start\"}},{\"id\":\"end\",\"type\":\"end\",\"position\":{\"x\":480,\"y\":160},\"data\":{\"label\":\"End\"}}],\"edges\":[{\"id\":\"e1\",\"source\":\"start\",\"target\":\"end\"}]}";
 
@@ -76,6 +84,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<WorkflowResponse>> GetWorkflow(string workspaceId, string workflowId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
         var wf = await _db.Workflows
             .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId && w.Id == workflowId && w.DeletedAt == null, ct);
@@ -84,24 +93,45 @@ public class WorkflowsController : ControllerBase
         return Ok(MapWorkflow(wf));
     }
 
+    [HttpPut("{workflowId}")]
     [HttpPatch("{workflowId}")]
     public async Task<ActionResult<WorkflowResponse>> UpdateWorkflow(string workspaceId, string workflowId, [FromBody] WorkflowUpdateRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         var wf = await _db.Workflows
             .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId && w.Id == workflowId && w.DeletedAt == null, ct);
 
-        if (wf == null) return NotFound();
+        if (wf == null) return NotFound(new { detail = "Workflow not found" });
+
+        if (request.ExpectedVersion.HasValue && wf.DraftVersion != request.ExpectedVersion.Value)
+        {
+            return Conflict(new { detail = "Workflow was updated by another member" });
+        }
 
         if (request.Name != null) wf.Name = request.Name.Trim();
         if (request.Description != null) wf.Description = request.Description;
         if (request.FolderId != null) wf.FolderId = request.FolderId;
         if (request.PublishedAccess != null) wf.PublishedAccess = request.PublishedAccess;
 
-        if (request.DraftGraph != null)
+        if (request.Slug != null && !string.Equals(request.Slug, wf.Slug, StringComparison.Ordinal))
         {
-            wf.DraftGraph = request.DraftGraph is string s ? s : JsonSerializer.Serialize(request.DraftGraph);
+            string normalizedSlug = request.Slug.Trim();
+            bool duplicateSlug = await _db.Workflows.AnyAsync(
+                item => item.Id != workflowId && item.Slug == normalizedSlug && item.DeletedAt == null,
+                ct);
+            if (duplicateSlug)
+            {
+                return Conflict(new { detail = "Workflow slug already exists" });
+            }
+            wf.Slug = normalizedSlug;
+        }
+
+        object? graph = request.Graph ?? request.DraftGraph;
+        if (graph != null)
+        {
+            wf.DraftGraph = graph is string s ? s : JsonSerializer.Serialize(graph);
             wf.DraftVersion++;
         }
 
@@ -115,6 +145,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<WorkflowResponse>> PublishWorkflow(string workspaceId, string workflowId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         var wf = await _db.Workflows
             .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId && w.Id == workflowId && w.DeletedAt == null, ct);
@@ -148,6 +179,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<RunResponse>> TriggerRun(string workspaceId, string workflowId, [FromBody] RunCreateRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
         var wf = await _db.Workflows
             .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId && w.Id == workflowId && w.DeletedAt == null, ct);
@@ -187,24 +219,42 @@ public class WorkflowsController : ControllerBase
     }
 
     [HttpGet("{workflowId}/runs")]
-    public async Task<ActionResult<List<RunResponse>>> ListRuns(string workspaceId, string workflowId, CancellationToken ct)
+    public async Task<ActionResult<RunPageResponse>> ListRuns(
+        string workspaceId,
+        string workflowId,
+        [FromQuery] int limit = 50,
+        [FromQuery] int offset = 0,
+        CancellationToken ct = default)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
-        var runs = await _db.WorkflowRuns
-            .Where(r => r.WorkspaceId == workspaceId && r.WorkflowId == workflowId)
+        limit = Math.Clamp(limit, 1, 100);
+        offset = Math.Max(offset, 0);
+        var query = _db.WorkflowRuns
+            .Where(r => r.WorkspaceId == workspaceId && r.WorkflowId == workflowId);
+        int total = await query.CountAsync(ct);
+        var runs = await query
             .OrderByDescending(r => r.CreatedAt)
-            .Take(50)
+            .Skip(offset)
+            .Take(limit)
             .Select(r => MapRun(r))
             .ToListAsync(ct);
 
-        return Ok(runs);
+        return Ok(new RunPageResponse
+        {
+            Items = runs,
+            Total = total,
+            Limit = limit,
+            Offset = offset
+        });
     }
 
     [HttpGet("{workflowId}/runs/{runId}")]
     public async Task<ActionResult<RunResponse>> GetRun(string workspaceId, string workflowId, string runId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
         var run = await _db.WorkflowRuns
             .FirstOrDefaultAsync(r => r.WorkspaceId == workspaceId && r.WorkflowId == workflowId && r.Id == runId, ct);
@@ -216,6 +266,9 @@ public class WorkflowsController : ControllerBase
     [HttpGet("{workflowId}/runs/{runId}/events")]
     public async Task GetRunEvents(string workspaceId, string workflowId, string runId, CancellationToken ct)
     {
+        var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
+
         var run = await _db.WorkflowRuns
             .FirstOrDefaultAsync(r => r.WorkspaceId == workspaceId && r.WorkflowId == workflowId && r.Id == runId, ct);
 
@@ -240,6 +293,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<List<WorkflowFolderResponse>>> ListFolders(string workspaceId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
         var folders = await _db.WorkflowFolders
             .Where(f => f.WorkspaceId == workspaceId)
@@ -269,6 +323,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<WorkflowFolderResponse>> CreateFolder(string workspaceId, [FromBody] WorkflowFolderCreateRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         bool duplicate = await _db.WorkflowFolders.AnyAsync(f => f.WorkspaceId == workspaceId && f.Name == request.Name.Trim(), ct);
         if (duplicate)
@@ -301,6 +356,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<WorkflowFolderResponse>> UpdateFolder(string workspaceId, string folderId, [FromBody] WorkflowFolderUpdateRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         var folder = await _db.WorkflowFolders.FirstOrDefaultAsync(f => f.WorkspaceId == workspaceId && f.Id == folderId, ct);
         if (folder == null) return NotFound();
@@ -332,6 +388,7 @@ public class WorkflowsController : ControllerBase
     public async Task<IActionResult> DeleteFolder(string workspaceId, string folderId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         var folder = await _db.WorkflowFolders.FirstOrDefaultAsync(f => f.WorkspaceId == workspaceId && f.Id == folderId, ct);
         if (folder == null) return NotFound();
@@ -352,6 +409,7 @@ public class WorkflowsController : ControllerBase
     public async Task<ActionResult<WorkflowResponse>> MoveWorkflowFolder(string workspaceId, string workflowId, [FromBody] WorkflowFolderMoveRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         var wf = await _db.Workflows.FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId && w.Id == workflowId && w.DeletedAt == null, ct);
         if (wf == null) return NotFound();

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Ordo.Backend.Background;
+using Ordo.Backend.Common.Auth;
 using Ordo.Backend.Common.Security;
 using Ordo.Backend.Data;
 using Ordo.Backend.Data.Entities;
@@ -18,17 +19,23 @@ public class PublicAppsController : ControllerBase
     private readonly WorkflowQueue _queue;
     private readonly RunEventsService _eventsService;
     private readonly JwtTokenService _jwt;
+    private readonly CurrentUserContext _currentUser;
 
+    /// <summary>
+    /// 初始化公开应用控制器。
+    /// </summary>
     public PublicAppsController(
         OrdoDbContext db,
         WorkflowQueue queue,
         RunEventsService eventsService,
-        JwtTokenService jwt)
+        JwtTokenService jwt,
+        CurrentUserContext currentUser)
     {
         _db = db;
         _queue = queue;
         _eventsService = eventsService;
         _jwt = jwt;
+        _currentUser = currentUser;
     }
 
     [HttpGet("{appSlug}")]
@@ -38,23 +45,49 @@ public class PublicAppsController : ControllerBase
         if (workflow == null || version == null) return NotFound();
 
         var inputFields = new List<object>();
+        var triggers = new List<string> { "api" };
         try
         {
             using var doc = JsonDocument.Parse(version.Graph);
             if (doc.RootElement.TryGetProperty("nodes", out var nodes))
             {
-                foreach (var n in nodes.EnumerateArray())
+                foreach (var node in nodes.EnumerateArray())
                 {
-                    if (n.TryGetProperty("type", out var t) && t.GetString() == "start" &&
-                        n.TryGetProperty("data", out var data) &&
-                        data.TryGetProperty("inputs", out var inps))
+                    if (!node.TryGetProperty("type", out var type) || type.GetString() != "start" ||
+                        !node.TryGetProperty("data", out var data))
                     {
-                        inputFields.AddRange(inps.EnumerateArray().Select(x => (object)x));
+                        continue;
                     }
+
+                    JsonElement config = data.TryGetProperty("config", out var nestedConfig) ? nestedConfig : data;
+                    if (config.TryGetProperty("input_fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
+                    {
+                        inputFields.AddRange(fields.EnumerateArray().Select(item => (object)item.Clone()));
+                    }
+                    if (config.TryGetProperty("triggers", out var configuredTriggers) && configuredTriggers.ValueKind == JsonValueKind.Array)
+                    {
+                        triggers = configuredTriggers.EnumerateArray()
+                            .Select(item => item.GetString())
+                            .Where(item => !string.IsNullOrWhiteSpace(item))
+                            .Select(item => item!)
+                            .ToList();
+                    }
+                    break;
                 }
             }
         }
-        catch { }
+        catch (JsonException)
+        {
+            // 已发布图损坏时保持最小元数据响应，由运行入口返回具体错误。
+        }
+
+        DateTime now = DateTime.UtcNow;
+        var grantTypes = workflow.PublishedAccess == "protected"
+            ? await _db.WorkflowAccessGrants
+                .Where(grant => grant.WorkflowId == workflow.Id && (!grant.ExpiresAt.HasValue || grant.ExpiresAt > now))
+                .Select(grant => grant.GrantType)
+                .ToListAsync(ct)
+            : new List<string>();
 
         return Ok(new PublicAppMetaResponse
         {
@@ -64,6 +97,14 @@ public class PublicAppsController : ControllerBase
             Description = workflow.Description,
             AppType = workflow.AppType,
             PublishedAccess = workflow.PublishedAccess,
+            Access = workflow.PublishedAccess,
+            AccessOptions = new Dictionary<string, bool>
+            {
+                ["login"] = grantTypes.Any(type => type is "all_users" or "user"),
+                ["password"] = grantTypes.Contains("password")
+            },
+            Version = version.Version,
+            Triggers = triggers,
             InputFields = inputFields
         });
     }
@@ -72,19 +113,62 @@ public class PublicAppsController : ControllerBase
     public async Task<ActionResult<AppAccessResponse>> RequestAccess(string appSlug, [FromBody] AppAccessRequest request, CancellationToken ct)
     {
         var (workflow, _) = await GetPublishedAsync(appSlug, ct);
-        if (workflow == null) return NotFound();
-
-        // 查找密码授权
-        var grant = await _db.WorkflowAccessGrants
-            .FirstOrDefaultAsync(g => g.WorkflowId == workflow.Id && g.GrantType == "password", ct);
-
-        if (grant == null || string.IsNullOrEmpty(grant.PasswordHash) || !PasswordHasherService.VerifyPassword(request.Password, grant.PasswordHash))
+        if (workflow == null) return NotFound(new { detail = "Published app not found" });
+        if (workflow.PublishedAccess != "protected")
         {
-            return Unauthorized(new { error = "Invalid access password" });
+            return Ok(new AppAccessResponse());
         }
 
-        string token = _jwt.CreateAppAccessToken(workflow.Id, grant.Id, grant.ExpiresAt);
-        return Ok(new AppAccessResponse { AppToken = token });
+        if (Request.Headers.TryGetValue("X-App-Access", out var storedToken) && !string.IsNullOrWhiteSpace(storedToken))
+        {
+            var storedGrant = await ValidatePasswordGrantAsync(workflow, storedToken.ToString(), ct);
+            if (storedGrant == null)
+            {
+                return Unauthorized(new { detail = "Invalid app access token" });
+            }
+            return Ok(new AppAccessResponse
+            {
+                AccessToken = storedToken.ToString(),
+                AppToken = storedToken.ToString(),
+                GrantId = storedGrant.Id
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            DateTime now = DateTime.UtcNow;
+            var passwordGrants = await _db.WorkflowAccessGrants
+                .Where(grant => grant.WorkflowId == workflow.Id && grant.GrantType == "password" &&
+                    (!grant.ExpiresAt.HasValue || grant.ExpiresAt > now))
+                .ToListAsync(ct);
+            var grant = passwordGrants.FirstOrDefault(item =>
+                !string.IsNullOrEmpty(item.PasswordHash) &&
+                PasswordHasherService.VerifyPassword(request.Password, item.PasswordHash));
+            if (grant == null)
+            {
+                return Unauthorized(new { detail = "Invalid or expired access password" });
+            }
+
+            string token = _jwt.CreateAppAccessToken(workflow.Id, grant.Id, grant.ExpiresAt);
+            return Ok(new AppAccessResponse
+            {
+                AccessToken = token,
+                AppToken = token,
+                GrantId = grant.Id
+            });
+        }
+
+        var user = await _currentUser.GetCurrentUserAsync(ct);
+        if (user == null)
+        {
+            return Unauthorized(new { detail = "Authentication required" });
+        }
+        bool allowed = await HasUserGrantAsync(workflow.Id, user.Id, ct);
+        if (!allowed)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { detail = "User does not have access to this app" });
+        }
+        return Ok(new AppAccessResponse { UserId = user.Id });
     }
 
     [HttpPost("{appSlug}/form")]
@@ -108,30 +192,38 @@ public class PublicAppsController : ControllerBase
     [HttpGet("{appSlug}/runs/{runId}")]
     public async Task<ActionResult<RunResponse>> GetPublicRun(string appSlug, string runId, CancellationToken ct)
     {
-        var (workflow, _) = await GetPublishedAsync(appSlug, ct);
-        if (workflow == null) return NotFound();
+        var (workflow, version) = await GetPublishedAsync(appSlug, ct);
+        if (workflow == null || version == null) return NotFound(new { detail = "Published app not found" });
+        var credential = await AuthorizePublicAsync(workflow, ct);
+        if (credential == null) return Unauthorized(new { detail = "Authentication or app access required" });
 
         var run = await _db.WorkflowRuns
-            .FirstOrDefaultAsync(r => r.WorkflowId == workflow.Id && r.Id == runId, ct);
+            .FirstOrDefaultAsync(r => r.WorkflowId == workflow.Id && r.WorkflowVersionId == version.Id && r.Id == runId, ct);
 
-        if (run == null) return NotFound();
+        if (run == null || !CanReadRun(credential, run)) return NotFound(new { detail = "Workflow run not found" });
         return Ok(MapRun(run));
     }
 
     [HttpGet("{appSlug}/runs/{runId}/events")]
     public async Task GetPublicRunEvents(string appSlug, string runId, CancellationToken ct)
     {
-        var (workflow, _) = await GetPublishedAsync(appSlug, ct);
-        if (workflow == null)
+        var (workflow, version) = await GetPublishedAsync(appSlug, ct);
+        if (workflow == null || version == null)
         {
             Response.StatusCode = StatusCodes.Status404NotFound;
             return;
         }
+        var credential = await AuthorizePublicAsync(workflow, ct);
+        if (credential == null)
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
 
         var run = await _db.WorkflowRuns
-            .FirstOrDefaultAsync(r => r.WorkflowId == workflow.Id && r.Id == runId, ct);
+            .FirstOrDefaultAsync(r => r.WorkflowId == workflow.Id && r.WorkflowVersionId == version.Id && r.Id == runId, ct);
 
-        if (run == null)
+        if (run == null || !CanReadRun(credential, run))
         {
             Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -153,28 +245,22 @@ public class PublicAppsController : ControllerBase
         var (workflow, version) = await GetPublishedAsync(appSlug, ct);
         if (workflow == null || version == null) return NotFound();
 
-        // 校验受保护公开访问
-        if (workflow.PublishedAccess == "protected")
+        var credential = await AuthorizePublicAsync(workflow, ct);
+        if (credential == null)
         {
-            if (!Request.Headers.TryGetValue("Authorization", out var authHeader) || string.IsNullOrEmpty(authHeader))
-            {
-                return Unauthorized(new { error = "Authorization required" });
-            }
-
-            string raw = authHeader.ToString().Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase).Trim();
-            // 检查是 AppToken 还是 API Key
-            var appAuth = _jwt.ValidateAppAccessToken(raw);
-            if (appAuth == null || appAuth.Value.WorkflowId != workflow.Id)
-            {
-                // 检查 API Key
-                string hash = JwtTokenService.ComputeSha256Hex(raw);
-                bool keyValid = await _db.ApiKeys.AnyAsync(k => k.WorkspaceId == workflow.WorkspaceId && k.KeyHash == hash && k.RevokedAt == null, ct);
-                if (!keyValid)
-                {
-                    return Unauthorized(new { error = "Invalid token or API key" });
-                }
-            }
+            return Unauthorized(new { detail = "Authentication or app access required" });
         }
+        if (triggerType is "api" or "webhook" && workflow.PublishedAccess == "protected" && credential.Value.Kind != "api_key")
+        {
+            return Unauthorized(new { detail = "Workflow API key required" });
+        }
+
+        string? triggerUserId = credential.Value.Kind switch
+        {
+            "user" => credential.Value.Id,
+            "grant" => $"grant:{credential.Value.Id}",
+            _ => null
+        };
 
         var run = new WorkflowRun
         {
@@ -194,6 +280,116 @@ public class PublicAppsController : ControllerBase
         await _queue.EnqueueAsync(run.Id, null, ct);
 
         return StatusCode(StatusCodes.Status201Created, MapRun(run));
+    }
+
+    /// <summary>
+    /// 验证当前公开请求使用的密码令牌、API Key 或登录用户授权。
+    /// </summary>
+    /// <param name="workflow">目标公开工作流。</param>
+    /// <param name="ct">请求取消令牌。</param>
+    /// <returns>授权类型和授权主体 ID；公开应用返回 public，失败返回 null。</returns>
+    private async Task<(string Kind, string? Id)?> AuthorizePublicAsync(Workflow workflow, CancellationToken ct)
+    {
+        if (workflow.PublishedAccess != "protected")
+        {
+            return ("public", null);
+        }
+
+        if (Request.Headers.TryGetValue("X-App-Access", out var appAccess) && !string.IsNullOrWhiteSpace(appAccess))
+        {
+            var grant = await ValidatePasswordGrantAsync(workflow, appAccess.ToString(), ct);
+            return grant == null ? null : ("grant", grant.Id);
+        }
+
+        if (Request.Headers.TryGetValue("Authorization", out var authorization))
+        {
+            string raw = authorization.ToString();
+            if (raw.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                raw = raw["Bearer ".Length..].Trim();
+            }
+            if (raw.StartsWith("owf_", StringComparison.Ordinal))
+            {
+                string hash = JwtTokenService.ComputeSha256Hex(raw);
+                var key = await _db.ApiKeys.FirstOrDefaultAsync(item =>
+                    item.WorkspaceId == workflow.WorkspaceId &&
+                    (item.WorkflowId == null || item.WorkflowId == workflow.Id) &&
+                    item.KeyHash == hash && item.RevokedAt == null,
+                    ct);
+                return key == null ? null : ("api_key", key.Id);
+            }
+        }
+
+        var user = await _currentUser.GetCurrentUserAsync(ct);
+        if (user != null && await HasUserGrantAsync(workflow.Id, user.Id, ct))
+        {
+            return ("user", user.Id);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 验证密码授权令牌仍指向当前工作流中有效的密码授权记录。
+    /// </summary>
+    /// <param name="workflow">目标公开工作流。</param>
+    /// <param name="token">X-App-Access 令牌。</param>
+    /// <param name="ct">请求取消令牌。</param>
+    /// <returns>有效授权记录；无效或过期时返回 null。</returns>
+    private async Task<WorkflowAccessGrant?> ValidatePasswordGrantAsync(
+        Workflow workflow,
+        string token,
+        CancellationToken ct)
+    {
+        var decoded = _jwt.ValidateAppAccessToken(token);
+        if (decoded == null || decoded.Value.WorkflowId != workflow.Id)
+        {
+            return null;
+        }
+
+        DateTime now = DateTime.UtcNow;
+        return await _db.WorkflowAccessGrants.FirstOrDefaultAsync(grant =>
+            grant.Id == decoded.Value.GrantId &&
+            grant.WorkflowId == workflow.Id &&
+            grant.GrantType == "password" &&
+            (!grant.ExpiresAt.HasValue || grant.ExpiresAt > now),
+            ct);
+    }
+
+    /// <summary>
+    /// 判断登录用户是否拥有当前公开工作流的有效用户授权。
+    /// </summary>
+    /// <param name="workflowId">目标工作流 ID。</param>
+    /// <param name="userId">登录用户 ID。</param>
+    /// <param name="ct">请求取消令牌。</param>
+    /// <returns>存在 all_users 或当前用户专属授权时返回 true。</returns>
+    private Task<bool> HasUserGrantAsync(string workflowId, string userId, CancellationToken ct)
+    {
+        DateTime now = DateTime.UtcNow;
+        return _db.WorkflowAccessGrants.AnyAsync(grant =>
+            grant.WorkflowId == workflowId &&
+            (grant.GrantType == "all_users" || (grant.GrantType == "user" && grant.UserId == userId)) &&
+            (!grant.ExpiresAt.HasValue || grant.ExpiresAt > now),
+            ct);
+    }
+
+    /// <summary>
+    /// 验证授权主体只能读取由自身创建的受保护表单运行。
+    /// </summary>
+    /// <param name="credential">已验证的授权主体。</param>
+    /// <param name="run">目标运行记录。</param>
+    /// <returns>当前主体是否可以读取该运行。</returns>
+    private static bool CanReadRun((string Kind, string? Id)? credential, WorkflowRun run)
+    {
+        if (credential == null)
+        {
+            return false;
+        }
+        return credential.Value.Kind switch
+        {
+            "user" => run.TriggeredBy == "form" && run.TriggerUserId == credential.Value.Id,
+            "grant" => run.TriggeredBy == "form" && run.TriggerUserId == $"grant:{credential.Value.Id}",
+            _ => true
+        };
     }
 
     private async Task<(Workflow? Workflow, WorkflowVersion? Version)> GetPublishedAsync(string slug, CancellationToken ct)

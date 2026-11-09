@@ -14,7 +14,7 @@ public class VariableNodeExecutor : INodeExecutor
     {
         var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-        if (node.Data.TryGetValue("assignments", out var rawAssignments) && rawAssignments is IEnumerable<object?> assignments)
+        if (node.Config.TryGetValue("assignments", out var rawAssignments) && rawAssignments is IEnumerable<object?> assignments)
         {
             foreach (var item in assignments)
             {

@@ -12,7 +12,7 @@ public class EndNodeExecutor : INodeExecutor
 
     public Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        if (node.Data.TryGetValue("outputs", out var rawOutputs))
+        if (node.Config.TryGetValue("outputs", out var rawOutputs))
         {
             if (rawOutputs is IEnumerable<object?> outputList)
             {

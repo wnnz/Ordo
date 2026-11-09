@@ -21,9 +21,9 @@ public class HttpNodeExecutor : INodeExecutor
 
     public async Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        string url = WorkflowValueEvaluator.ResolveVariables(node.Data.TryGetValue("url", out var u) ? u : null, context)?.ToString() ?? "";
-        string method = node.Data.TryGetValue("method", out var m) ? m?.ToString()?.ToUpperInvariant() ?? "GET" : "GET";
-        object? bodyObj = WorkflowValueEvaluator.ResolveVariables(node.Data.TryGetValue("body", out var b) ? b : null, context);
+        string url = WorkflowValueEvaluator.ResolveVariables(node.Config.TryGetValue("url", out var u) ? u : null, context)?.ToString() ?? "";
+        string method = node.Config.TryGetValue("method", out var m) ? m?.ToString()?.ToUpperInvariant() ?? "GET" : "GET";
+        object? bodyObj = WorkflowValueEvaluator.ResolveVariables(node.Config.TryGetValue("body", out var b) ? b : null, context);
 
         var client = _httpClientFactory.CreateClient();
         var request = new HttpRequestMessage(new HttpMethod(method), url);

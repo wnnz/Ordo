@@ -15,17 +15,26 @@ public class ScriptsController : ControllerBase
 {
     private readonly OrdoDbContext _db;
     private readonly CurrentUserContext _currentUser;
+    private readonly WorkspaceAuthorizationService _authorization;
 
-    public ScriptsController(OrdoDbContext db, CurrentUserContext currentUser)
+    /// <summary>
+    /// 初始化脚本控制器。
+    /// </summary>
+    public ScriptsController(
+        OrdoDbContext db,
+        CurrentUserContext currentUser,
+        WorkspaceAuthorizationService authorization)
     {
         _db = db;
         _currentUser = currentUser;
+        _authorization = authorization;
     }
 
     [HttpGet]
     public async Task<ActionResult<List<object>>> ListScripts(string workspaceId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
         var list = await _db.Scripts
             .Where(s => s.WorkspaceId == workspaceId && s.DeletedAt == null)
@@ -56,6 +65,7 @@ public class ScriptsController : ControllerBase
     public async Task<ActionResult<object>> CreateScript(string workspaceId, [FromBody] CreateScriptRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         var script = new Script
         {
@@ -97,6 +107,7 @@ public class ScriptsController : ControllerBase
     public async Task<ActionResult<object>> DeleteScript(string workspaceId, string scriptId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "editor", ct);
 
         var s = await _db.Scripts
             .FirstOrDefaultAsync(item => item.WorkspaceId == workspaceId && item.Id == scriptId && item.DeletedAt == null, ct);

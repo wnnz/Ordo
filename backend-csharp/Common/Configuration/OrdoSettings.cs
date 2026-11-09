@@ -12,11 +12,10 @@ public class OrdoSettings
     public string StoragePath { get; set; } = "./data/files";
     public int AccessTokenMinutes { get; set; } = 720;
     public string CorsOrigins { get; set; } = "http://localhost:5173";
-    public string SandboxUrl { get; set; } = "http://localhost:8081";
-    public string SandboxSharedSecret { get; set; } = "";
     public string SandboxArtifactPath { get; set; } = "./data/sandbox-artifacts";
-    public string HostInfoAgentUrl { get; set; } = "http://host.docker.internal:8765";
-    public string HostInfoAgentToken { get; set; } = "";
+    public string DockerHost { get; set; } = "npipe://./pipe/docker_engine";
+    public string SandboxRuntimeImage { get; set; } = "ordo-sandbox";
+    public string SandboxPythonPath { get; set; } = "python";
     public long MaxUploadBytes { get; set; } = 50 * 1024 * 1024;
     public long MaxRequestBodyBytes { get; set; } = 50 * 1024 * 1024;
     public int PublicRateLimitRequests { get; set; } = 30;

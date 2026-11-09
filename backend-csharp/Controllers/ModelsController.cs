@@ -15,12 +15,21 @@ public class ModelsController : ControllerBase
 {
     private readonly OrdoDbContext _db;
     private readonly CurrentUserContext _currentUser;
+    private readonly WorkspaceAuthorizationService _authorization;
     private readonly CredentialEncryptionService _encryption;
 
-    public ModelsController(OrdoDbContext db, CurrentUserContext currentUser, CredentialEncryptionService encryption)
+    /// <summary>
+    /// 初始化模型供应商控制器。
+    /// </summary>
+    public ModelsController(
+        OrdoDbContext db,
+        CurrentUserContext currentUser,
+        WorkspaceAuthorizationService authorization,
+        CredentialEncryptionService encryption)
     {
         _db = db;
         _currentUser = currentUser;
+        _authorization = authorization;
         _encryption = encryption;
     }
 
@@ -28,6 +37,7 @@ public class ModelsController : ControllerBase
     public async Task<ActionResult<List<ModelProviderResponse>>> ListProviders(string workspaceId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "viewer", ct);
 
         var list = await _db.ModelProviders
             .Where(m => m.WorkspaceId == workspaceId)
@@ -52,6 +62,7 @@ public class ModelsController : ControllerBase
     public async Task<ActionResult<ModelProviderResponse>> CreateProvider(string workspaceId, [FromBody] ModelProviderCreateRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "admin", ct);
 
         var provider = new ModelProvider
         {
@@ -85,6 +96,7 @@ public class ModelsController : ControllerBase
     public async Task<ActionResult<object>> DeleteProvider(string workspaceId, string providerId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "admin", ct);
 
         var provider = await _db.ModelProviders
             .FirstOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.Id == providerId, ct);

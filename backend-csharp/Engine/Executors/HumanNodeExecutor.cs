@@ -22,11 +22,11 @@ public class HumanNodeExecutor : INodeExecutor
 
         // 尚未审批，抛出暂停异常通知引擎挂起
         var requestData = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        if (node.Data.TryGetValue("title", out var title))
+        if (node.Config.TryGetValue("title", out var title))
         {
             requestData["title"] = WorkflowValueEvaluator.ResolveVariables(title, context);
         }
-        if (node.Data.TryGetValue("description", out var desc))
+        if (node.Config.TryGetValue("description", out var desc))
         {
             requestData["description"] = WorkflowValueEvaluator.ResolveVariables(desc, context);
         }

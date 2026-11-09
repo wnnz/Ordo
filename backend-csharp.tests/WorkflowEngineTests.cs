@@ -79,4 +79,42 @@ public class WorkflowEngineTests
         Assert.True(outputs.TryGetValue("greeting", out var greeting));
         Assert.Equal("Hello, Developer! Welcome to Ordo.", greeting?.ToString());
     }
+
+    /// <summary>
+    /// 验证引擎能够直接执行前端保存的 data.config 标准图结构。
+    /// </summary>
+    [Fact]
+    public async Task TestWorkflowEngineExecutesFrontendConfigGraph()
+    {
+        const string json = """
+        {
+          "nodes": [
+            { "id": "start_1", "type": "start", "data": { "label": "开始", "config": {} } },
+            { "id": "template_1", "type": "template", "data": { "label": "模板", "config": { "template": "Hello, {{inputs.user_name}}!" } } },
+            { "id": "end_1", "type": "end", "data": { "label": "结束", "config": { "outputs": [{ "name": "greeting", "value": "{{template_1.output}}" }] } } }
+          ],
+          "edges": [
+            { "id": "e1", "source": "start_1", "target": "template_1" },
+            { "id": "e2", "source": "template_1", "target": "end_1" }
+          ]
+        }
+        """;
+        var graph = JsonSerializer.Deserialize<WorkflowGraph>(json) ?? throw new InvalidOperationException("Graph deserialization failed");
+        var registry = new NodeRegistry(new INodeExecutor[]
+        {
+            new StartNodeExecutor(),
+            new TemplateNodeExecutor(),
+            new EndNodeExecutor()
+        });
+        var engine = new WorkflowEngine(registry, new RunEventsService());
+
+        var result = await engine.ExecuteGraphAsync(
+            "frontend-graph-run",
+            graph,
+            new Dictionary<string, object?> { ["user_name"] = "Developer" },
+            CancellationToken.None);
+
+        Assert.Equal("succeeded", result.Status);
+        Assert.Equal("Hello, Developer!", result.Outputs["greeting"]?.ToString());
+    }
 }

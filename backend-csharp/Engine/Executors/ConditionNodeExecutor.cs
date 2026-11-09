@@ -12,7 +12,7 @@ public class ConditionNodeExecutor : INodeExecutor
 
     public Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        bool matched = WorkflowValueEvaluator.EvaluateCondition(node.Data, context);
+        bool matched = WorkflowValueEvaluator.EvaluateCondition(node.Config, context);
         return Task.FromResult<object?>(new Dictionary<string, object?>
         {
             { "result", matched },

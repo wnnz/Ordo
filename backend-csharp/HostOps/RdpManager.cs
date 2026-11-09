@@ -1,0 +1,167 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Ordo.Backend.HostOps.Models;
+using Ordo.Backend.HostOps.Native;
+
+namespace Ordo.Backend.HostOps;
+
+/// <summary>
+/// 负责管理 Windows 远程桌面 (RDP) 会话的枚举与安全断开。
+/// </summary>
+public static class RdpManager
+{
+    private static readonly Dictionary<int, string> SessionStateNames = new()
+    {
+        { 0, "active" },
+        { 1, "connected" },
+        { 2, "connect_query" },
+        { 3, "shadow" },
+        { 4, "disconnected" },
+        { 5, "idle" },
+        { 6, "listening" },
+        { 7, "reset" },
+        { 8, "down" },
+        { 9, "initializing" }
+    };
+
+    /// <summary>
+    /// 枚举当前活动的 RDP 会话。
+    /// </summary>
+    /// <returns>RDP 会话信息列表。</returns>
+    public static List<RdpSessionInfo> ListSessions()
+    {
+        var sessions = new List<RdpSessionInfo>();
+
+        if (!WtsNativeMethods.WTSEnumerateSessionsW(WtsNativeMethods.WtsCurrentServerHandle, 0, 1, out var pSessionInfo, out var count))
+        {
+            return sessions;
+        }
+
+        try
+        {
+            int structSize = Marshal.SizeOf<WtsSessionInfo>();
+            for (int i = 0; i < count; i++)
+            {
+                var sessionInfo = Marshal.PtrToStructure<WtsSessionInfo>(pSessionInfo + (i * structSize));
+                int stateInt = (int)sessionInfo.State;
+
+                // 仅筛选 active (0) 和 connected (1) 状态
+                if (stateInt != 0 && stateInt != 1)
+                {
+                    continue;
+                }
+
+                // 检查协议类型是否为 RDP (协议类型 2)
+                int protocol = QuerySessionProtocol(sessionInfo.SessionId);
+                if (protocol != 2)
+                {
+                    continue;
+                }
+
+                string username = QuerySessionUserName(sessionInfo.SessionId);
+                string winStationName = Marshal.PtrToStringUni(sessionInfo.pWinStationName) ?? string.Empty;
+                string stateName = SessionStateNames.TryGetValue(stateInt, out var name) ? name : stateInt.ToString();
+
+                sessions.Add(new RdpSessionInfo
+                {
+                    SessionId = sessionInfo.SessionId,
+                    Username = username,
+                    SessionName = winStationName,
+                    State = stateName
+                });
+            }
+        }
+        finally
+        {
+            WtsNativeMethods.WTSFreeMemory(pSessionInfo);
+        }
+
+        return sessions;
+    }
+
+    /// <summary>
+    /// 断开指定的 RDP 会话，若未指定则断开所有活动 RDP 会话。
+    /// </summary>
+    /// <param name="targetSessionId">可选的目标会话 ID。</param>
+    /// <returns>断开操作结果。</returns>
+    public static RdpDisconnectResponse DisconnectSessions(int? targetSessionId = null)
+    {
+        var activeSessions = ListSessions();
+
+        if (targetSessionId.HasValue)
+        {
+            activeSessions = activeSessions.Where(s => s.SessionId == targetSessionId.Value).ToList();
+            if (activeSessions.Count == 0)
+            {
+                throw new KeyNotFoundException($"RDP session {targetSessionId.Value} is not active or connected");
+            }
+        }
+
+        var disconnected = new List<RdpSessionInfo>();
+        var failed = new List<RdpDisconnectFailure>();
+
+        foreach (var session in activeSessions)
+        {
+            if (WtsNativeMethods.WTSDisconnectSession(WtsNativeMethods.WtsCurrentServerHandle, session.SessionId, false))
+            {
+                disconnected.Add(session);
+            }
+            else
+            {
+                var error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                failed.Add(new RdpDisconnectFailure
+                {
+                    SessionId = session.SessionId,
+                    Username = session.Username,
+                    SessionName = session.SessionName,
+                    State = session.State,
+                    Error = error
+                });
+            }
+        }
+
+        return new RdpDisconnectResponse
+        {
+            Ok = failed.Count == 0,
+            DisconnectedCount = disconnected.Count,
+            Sessions = disconnected,
+            Failed = failed,
+            Message = $"Disconnected {disconnected.Count} RDP session(s) without logging off users.",
+            Source = "windows-host-agent"
+        };
+    }
+
+    private static int QuerySessionProtocol(int sessionId)
+    {
+        if (!WtsNativeMethods.WTSQuerySessionInformationW(WtsNativeMethods.WtsCurrentServerHandle, sessionId, WtsInfoClass.WtsClientProtocolType, out var pBuffer, out _))
+        {
+            return -1;
+        }
+
+        try
+        {
+            return Marshal.ReadInt16(pBuffer);
+        }
+        finally
+        {
+            WtsNativeMethods.WTSFreeMemory(pBuffer);
+        }
+    }
+
+    private static string QuerySessionUserName(int sessionId)
+    {
+        if (!WtsNativeMethods.WTSQuerySessionInformationW(WtsNativeMethods.WtsCurrentServerHandle, sessionId, WtsInfoClass.WtsUserName, out var pBuffer, out _))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return Marshal.PtrToStringUni(pBuffer) ?? string.Empty;
+        }
+        finally
+        {
+            WtsNativeMethods.WTSFreeMemory(pBuffer);
+        }
+    }
+}

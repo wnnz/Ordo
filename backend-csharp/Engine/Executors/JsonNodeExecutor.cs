@@ -13,7 +13,7 @@ public class JsonNodeExecutor : INodeExecutor
 
     public Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        object? raw = node.Data.TryGetValue("value", out var v) ? v : null;
+        object? raw = node.Config.TryGetValue("value", out var v) ? v : null;
         raw = WorkflowValueEvaluator.ResolveVariables(raw, context);
 
         if (raw is string str)

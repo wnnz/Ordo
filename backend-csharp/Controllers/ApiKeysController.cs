@@ -14,17 +14,26 @@ public class ApiKeysController : ControllerBase
 {
     private readonly OrdoDbContext _db;
     private readonly CurrentUserContext _currentUser;
+    private readonly WorkspaceAuthorizationService _authorization;
 
-    public ApiKeysController(OrdoDbContext db, CurrentUserContext currentUser)
+    /// <summary>
+    /// 初始化 API Key 控制器。
+    /// </summary>
+    public ApiKeysController(
+        OrdoDbContext db,
+        CurrentUserContext currentUser,
+        WorkspaceAuthorizationService authorization)
     {
         _db = db;
         _currentUser = currentUser;
+        _authorization = authorization;
     }
 
     [HttpGet]
     public async Task<ActionResult<List<object>>> ListKeys(string workspaceId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "admin", ct);
 
         var keys = await _db.ApiKeys
             .Where(k => k.WorkspaceId == workspaceId && k.RevokedAt == null)
@@ -53,6 +62,8 @@ public class ApiKeysController : ControllerBase
     public async Task<ActionResult<object>> CreateKey(string workspaceId, [FromBody] CreateApiKeyRequest request, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "admin", ct);
+        await _authorization.RequireWorkflowAsync(workspaceId, request.WorkflowId, ct);
 
         string rawKey = $"owf_{Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace('+', '-').Replace('/', '_').TrimEnd('=')}";
         string prefix = rawKey[..Math.Min(12, rawKey.Length)];
@@ -85,6 +96,7 @@ public class ApiKeysController : ControllerBase
     public async Task<ActionResult<object>> RevokeKey(string workspaceId, string keyId, CancellationToken ct)
     {
         var user = await _currentUser.RequireUserAsync(ct);
+        await _authorization.RequireRoleAsync(workspaceId, user.Id, "admin", ct);
 
         var apiKey = await _db.ApiKeys
             .FirstOrDefaultAsync(k => k.WorkspaceId == workspaceId && k.Id == keyId && k.RevokedAt == null, ct);

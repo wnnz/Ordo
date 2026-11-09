@@ -135,6 +135,16 @@ docker compose down -v
 
 API 容器启动时会自动执行 `alembic upgrade head`，不需要手动创建数据库表。
 
+### Windows 原生服务（C# 单体后端，推荐）
+
+`backend-csharp` 是不依赖容器运行的 .NET 单体实现：API、Worker、调度器、Web 静态资源、宿主机插件（原 OrdoWindowsAgent）与 Docker 沙箱控制面（原 sandbox 服务）全部合入单一 Windows 服务，仅 PostgreSQL 与脚本运行时容器继续使用 Docker Desktop：
+
+```powershell
+.\scripts\install-windows-service.ps1 -BuildFrontend
+```
+
+安装为 `OrdoBackend` 服务后，对外经 **sg2** 反向代理转发：`https://ordo.mossdeck.com` → `http://10.66.70.2:50008`（cn1-sg2 隧道地址，TLS 在 sg2 终止，sg2 参考配置见 `infra/sg2/`）。详见 [backend-csharp/README.md](backend-csharp/README.md)。
+
 ### 本地开发
 
 后端：

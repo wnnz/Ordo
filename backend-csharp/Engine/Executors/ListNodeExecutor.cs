@@ -12,20 +12,20 @@ public class ListNodeExecutor : INodeExecutor
 
     public Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        object? source = WorkflowValueEvaluator.ResolveVariables(node.Data.TryGetValue("source", out var s) ? s : null, context);
+        object? source = WorkflowValueEvaluator.ResolveVariables(node.Config.TryGetValue("source", out var s) ? s : null, context);
         if (source is not IEnumerable<object?> list)
         {
             return Task.FromResult<object?>(new { items = Array.Empty<object>() });
         }
 
         var items = list.ToList();
-        string op = node.Data.TryGetValue("operation", out var o) ? o?.ToString()?.ToLowerInvariant() ?? "filter" : "filter";
+        string op = node.Config.TryGetValue("operation", out var o) ? o?.ToString()?.ToLowerInvariant() ?? "filter" : "filter";
 
         if (op == "unique")
         {
             items = items.DistinctBy(x => x?.ToString()).ToList();
         }
-        else if (node.Data.TryGetValue("limit", out var lim) && lim is IDictionary<string, object?> limDict)
+        else if (node.Config.TryGetValue("limit", out var lim) && lim is IDictionary<string, object?> limDict)
         {
             if (limDict.TryGetValue("count", out var c) && int.TryParse(c?.ToString(), out int count))
             {

@@ -28,11 +28,11 @@ public class LlmNodeExecutor : INodeExecutor
 
     public async Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        string prompt = WorkflowValueEvaluator.ResolveVariables(node.Data.TryGetValue("prompt", out var p) ? p : null, context)?.ToString() ?? "";
-        string model = node.Data.TryGetValue("model", out var m) ? m?.ToString() ?? "gpt-4o" : "gpt-4o";
+        string prompt = WorkflowValueEvaluator.ResolveVariables(node.Config.TryGetValue("prompt", out var p) ? p : null, context)?.ToString() ?? "";
+        string model = node.Config.TryGetValue("model", out var m) ? m?.ToString() ?? "gpt-4o" : "gpt-4o";
 
         // 查询绑定的模型供应商
-        string? providerId = node.Data.TryGetValue("provider_id", out var pid) ? pid?.ToString() : null;
+        string? providerId = node.Config.TryGetValue("provider_id", out var pid) ? pid?.ToString() : null;
         string baseUrl = "https://api.openai.com/v1";
         string apiKey = "";
 

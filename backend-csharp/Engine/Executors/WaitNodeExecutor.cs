@@ -14,7 +14,7 @@ public class WaitNodeExecutor : INodeExecutor
         return Task.FromResult<object?>(new Dictionary<string, object?>
         {
             { "completed", true },
-            { "mode", node.Data.TryGetValue("mode", out var m) ? m?.ToString() ?? "all" : "all" }
+            { "mode", node.Config.TryGetValue("mode", out var m) ? m?.ToString() ?? "all" : "all" }
         });
     }
 }

@@ -33,8 +33,15 @@ public static class HostInfoCollector
             }
 
             var ipProps = ni.GetIPProperties();
-            var ipv4Props = ipProps.GetIPv4Properties();
-            int ifIndex = ipv4Props?.Index ?? 0;
+            int ifIndex = 0;
+            try
+            {
+                ifIndex = ipProps.GetIPv4Properties()?.Index ?? 0;
+            }
+            catch (NetworkInformationException)
+            {
+                // 网卡未绑定 IPv4 协议时 GetIPv4Properties 会抛异常，按无索引处理
+            }
 
             var ipv4Addresses = ipProps.UnicastAddresses
                 .Where(u => u.Address.AddressFamily == AddressFamily.InterNetwork)

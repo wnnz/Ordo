@@ -14,7 +14,7 @@ public class AggregateNodeExecutor : INodeExecutor
     {
         object? firstNonNull = null;
 
-        if (node.Data.TryGetValue("variables", out var vars) && vars is IEnumerable<object?> varList)
+        if (node.Config.TryGetValue("variables", out var vars) && vars is IEnumerable<object?> varList)
         {
             foreach (var v in varList)
             {

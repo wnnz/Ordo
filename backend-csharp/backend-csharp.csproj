@@ -5,14 +5,30 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>backend_csharp</RootNamespace>
+    <AssemblyName>Ordo</AssemblyName>
+    <!-- Windows 服务长期驻留：Workstation GC + 保守堆策略，显著降低常驻内存（Server GC 按核数开堆偏激进） -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <!-- 托管堆硬上限 512MB：超过则强制 GC/OOM，防泄漏失控；当前实际占用远低于此 -->
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="536870912" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Cronos" Version="0.13.0" />
+    <PackageReference Include="Docker.DotNet" Version="3.125.15" />
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageReference Include="Isopoh.Cryptography.Argon2" Version="2.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.14" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.*" />
+  </ItemGroup>
+
+  <!-- 前端构建产物内嵌为 wwwroot，实现单进程托管 Web + API -->
+  <ItemGroup Condition="Exists('..\frontend\dist')">
+    <Content Include="..\frontend\dist\**" Link="wwwroot\%(RecursiveDir)%(FileName)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

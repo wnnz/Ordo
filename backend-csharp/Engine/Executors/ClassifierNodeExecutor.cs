@@ -12,11 +12,11 @@ public class ClassifierNodeExecutor : INodeExecutor
 
     public Task<object?> ExecuteAsync(WorkflowNode node, Dictionary<string, object?> context, CancellationToken ct)
     {
-        object? inputVal = WorkflowValueEvaluator.ResolveVariables(node.Data.TryGetValue("input", out var inp) ? inp : null, context);
+        object? inputVal = WorkflowValueEvaluator.ResolveVariables(node.Config.TryGetValue("input", out var inp) ? inp : null, context);
         string inputStr = inputVal?.ToString() ?? "";
 
         string matchedCategory = "default";
-        if (node.Data.TryGetValue("categories", out var rawCats) && rawCats is IEnumerable<object?> categories)
+        if (node.Config.TryGetValue("categories", out var rawCats) && rawCats is IEnumerable<object?> categories)
         {
             foreach (var cat in categories)
             {
